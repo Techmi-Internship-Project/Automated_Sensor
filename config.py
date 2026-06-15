@@ -1,0 +1,3 @@
+ARUCO_DICTIONARY = 0  # replace with cv.aruco.DICT_4X4_50 in code
+REQUIRED_MARKER_IDS = {0, 1, 2, 3}
+SETTLE_FRAMES = 10

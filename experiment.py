@@ -1,0 +1,131 @@
+import cv2 as cv
+import time
+from pathlib import Path
+
+
+from measurement_capture import capture_measurement
+from image_processing import make_filename
+from run_metadata import atomic_write_json, write_run_metadata, write_done_file
+
+def run_experiment(
+        cap,
+        laser,
+        microorganism_type,
+        run_id,
+        duration_seconds,
+        interval_seconds,
+        output_root="current",
+        stop_event=None
+):
+    """
+    Run repeated measurements for specified amount of time
+    Parameters: 
+        cap: OpenCV VideoCapture object
+        microorganism_type:
+            Name of the microorganism being measured.
+
+        run_id:
+            Unique identifier for this experiment.
+
+        duration_seconds:
+            Total amount of time the experiment should run.
+
+        interval_seconds:
+            Time between measurements.
+
+        output_root:
+            Main folder where active experiment data is stored
+    """
+
+    # Create new folder for this experiment
+    run_folder = Path(output_root) / microorganism_type / f"run_{run_id}"
+    run_folder.mkdir(parents=True, exist_ok=True)
+
+    print(f"Experiment data will be saved in: {run_folder}")
+
+    # Use monotonic time to see time elapsed
+    start_time = time.monotonic()
+    next_capture_time = start_time
+    experiment_end_time = start_time + duration_seconds
+
+    capture_number = 0
+
+    write_run_metadata(
+        run_folder=run_folder,
+        microorganism_type=microorganism_type,
+        run_id=run_id,
+        duration_seconds=duration_seconds,
+        interval_seconds=interval_seconds,
+        camera_index=0 # CHANGE LATER
+    )
+
+    finish_reason = "unknown"
+
+    try:
+        while True:
+
+            if stop_event is not None and stop_event.is_set() : # User pressed stop button
+                finish_reason = "user_stopped"
+                break
+
+            current_time = time.monotonic()
+            elapsed_time = current_time - start_time
+
+            # Stop once duration reached
+            if elapsed_time >= duration_seconds:
+                print("Experiment duration reached.")
+                finish_reason = "duration_reached"
+                break
+
+            # Capture when next scheduled time has arrived
+            if current_time >= next_capture_time:
+                print(f"Taking measurement {capture_number}"
+                      f" at {elapsed_time:.1f} seconds"
+                    )
+                
+                try:
+                    # Run complete measurement sequence
+                    laser_only = capture_measurement(cap, laser)
+
+                    is_final_capture = (next_capture_time + interval_seconds >= experiment_end_time)
+
+
+                    filename = make_filename(
+                        microorganism_type,
+                        run_id,
+                    )
+
+                    # Put generated filename inside this run's folder
+                    filepath = run_folder / filename
+
+                    save_successful = cv.imwrite(str(filepath), laser_only)
+
+                    if not save_successful:
+                        raise RuntimeError(f"Could not save image: {filepath}")
+                    
+                    print(f"Saved: {filepath}")
+
+                    capture_number += 1
+
+                except RuntimeError as error:
+                    print(f"Capture failed: {error}")
+
+                # Schedule next capture from original timeline
+                next_capture_time += interval_seconds
+            
+            time.sleep(0.1)
+
+    except KeyboardInterrupt:
+        print("\nExperiment manually stopped.")
+        finish_reason = "user_stopped"
+
+    finally :
+        write_done_file(
+            run_folder=run_folder,
+            run_id=run_id,
+            capture_count=capture_number,
+            reason=finish_reason
+        )
+
+    print(f"Experiment finished with {capture_number} saved images.")
+    return run_folder
