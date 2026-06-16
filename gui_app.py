@@ -26,9 +26,9 @@ class SensorGUI :
         self.duration = tk.StringVar(value="0.5")
         self.interval = tk.StringVar(value="0.1")
 
-        self.status = tk.StringVar(value="Idle")
-        self.run_id = tk.StringVar(value="None")
-        self.error = tk.StringVar(value="None")
+        self.status = tk.StringVar(value="Status: Idle")
+        self.run_id = tk.StringVar(value="Run ID: None")
+        self.error = tk.StringVar(value="Error: None")
         self.stop_requested = False
 
         self.build_widgets()
@@ -98,12 +98,12 @@ class SensorGUI :
         button_frame.pack(pady=15)
 
         # Create the start button.
-        start_button = tk.Button(button_frame, text="Start", command=self.start_experiment)
-        start_button.pack(side=tk.LEFT, padx=10)
+        self.start_button = tk.Button(button_frame, text="Start", command=self.start_experiment)
+        self.start_button.pack(side=tk.LEFT, padx=10)
         
         # Create the stop button.
-        stop_button = tk.Button(button_frame, text="Stop", command=self.stop_experiment)
-        stop_button.pack(side=tk.LEFT, padx=10)
+        self.stop_button = tk.Button(button_frame, text="Stop", command=self.stop_experiment)
+        self.stop_button.pack(side=tk.LEFT, padx=10)
 
         # Create a label for status.
         status_label = tk.Label(self.root, textvariable=self.status)
@@ -296,9 +296,17 @@ class SensorGUI :
     def update_status_loop(self) : 
         if self.controller.is_running and not self.stop_requested : 
             self.status.set("Status: Running")
+            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
+            self.stop_button.config(state=tk.NORMAL) # Allow user to press
 
+        elif self.controller.is_running and self.stop_requested : 
+            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
+            self.stop_button.config(state=tk.DISABLED) # Dont user to press
+        
         else : 
             self.status.set("Status: Idle")
+            self.start_button.config(state=tk.NORMAL) # Dont allow user to press
+            self.stop_button.config(state=tk.DISABLED) # Allow user to press
 
         # Check for errors
         if self.controller.last_error is not None : 
