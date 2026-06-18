@@ -5,3 +5,4 @@ Libraries:
 pygrabber
 cv2
 numpy
+pillow
