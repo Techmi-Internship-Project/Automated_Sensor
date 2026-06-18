@@ -20,6 +20,20 @@ class ExperimentController :
         self.cap = None # Camera object
         self.laser = None # Laser relay object
 
+        # Lock so experiment thread and GUI thread do not edit status at same time
+        self.status_lock = threading.Lock()
+        self.status = { # Dictionary for live status updates
+            "state": "idle",
+            "elapsed_seconds": 0,
+            "capture_count": 0,
+            "last_saved_image": None, # Most recently saved image path
+            "run_folder": None, # Store current run folder path
+            "last_message": "Idle", # Most recent status message
+            "alert_message": None, # For specific error handling
+            "alert_id" : 0 # For popup handling
+        }
+        
+
     def start_experiment(
             self,
             microorganism_type,
@@ -37,6 +51,17 @@ class ExperimentController :
         self.last_run_folder = None
         self.camera_index = camera_index
         run_id = int(time.time())
+
+        self.update_status(
+            state="starting",
+            elapsed_seconds=0.0,
+            capture_count=0,
+            last_saved_image=None,
+            run_folder=None,
+            last_message="Starting experiment...",
+            alert_message=None,
+            alert_id=0
+        )
 
         self.thread = threading.Thread(
             target=self._experiment_worker,
@@ -83,12 +108,14 @@ class ExperimentController :
                 duration_seconds=duration_seconds,
                 interval_seconds=interval_seconds,
                 output_root=output_root,
-                stop_event=self.stop_event
+                stop_event=self.stop_event,
+                status_callback=self.update_status
             )
 
         except RuntimeError as error : 
             self.last_error = str(error)
             print(f"Experiment failed: {error}")
+            self.update_status(state="error", last_message=str(error))
 
         finally : 
             if self.laser is not None : 
@@ -98,6 +125,9 @@ class ExperimentController :
             if self.cap is not None : 
                 self.cap.release()
                 self.cap = None
+
+            if self.last_error is None:
+                self.update_status(state="finished", last_message="Experiment finished.")
 
             self.is_running = False
 
@@ -118,3 +148,27 @@ class ExperimentController :
             return False # Because no active thread
         
         return self.thread.is_alive() 
+    
+
+    def update_status(self, **kwargs) : 
+        """
+        Update the shared dictionary
+        """
+
+        # Lock status dictionary so only one thread edits
+        with self.status_lock : 
+            if "alert_message" in kwargs and kwargs["alert_message"] is not None :
+                kwargs["alert_id"] = self.status.get("alert_id", 0) + 1
+            
+            self.status.update(kwargs)
+
+
+
+    def get_status(self) : 
+        """
+        Read current status safely
+        """
+        with self.status_lock : 
+            return dict(self.status)
+        
+

@@ -90,9 +90,7 @@ def capture_measurement(cap, laser):
 
     # Stop this measurement if all four markers were not detected.
     if roi_corners is None:
-        raise RuntimeError(
-            "Could not detect all four ArUco markers"
-        )
+        raise RuntimeError("ARUCO_NOT_FOUND: Could not detect all four ArUco markers")
 
     # Use low exposure for both measurement images.
     set_low_exposure(cap)
@@ -139,3 +137,6 @@ def capture_measurement(cap, laser):
 
     # Return the processed image to main.py.
     return laser_only
+
+
+

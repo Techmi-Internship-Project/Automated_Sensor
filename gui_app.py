@@ -8,16 +8,38 @@ from experiment_controller import ExperimentController
 from startup_recovery import move_valid_runs_to_training, current_folder_has_contents, wipe_folder_contents, move_run_to_training
 from organism_menu import get_organism_options
 
+
+def format_elapsed(seconds) : 
+        """
+        Easy to read time format
+        """
+        seconds = int(seconds)
+        if seconds < 60 : 
+            return f"{seconds}s"
+        elif seconds < 3600 : # Minutes only but not hours 
+            minutes, secs = divmod(seconds, 60)
+            return f"{minutes}m {secs}s"
+        else : 
+            hours, remainder = divmod(seconds, 3600)
+            minutes, secs = divmod(remainder, 60)
+            return f"{hours}h {minutes}m {secs}s"
 class SensorGUI : 
     """
     Class for the GUI
     """
-    def __init__(self):
+    def __init__(self, current_folder, training_folder):
         self.root = tk.Tk() # Create main Tkinter window
         self.root.title("Bioreactor Sensor")
-        self.root.geometry("500x400")
+        self.root.geometry("600x500")
 
         self.controller = ExperimentController()
+
+        self.current_folder = current_folder
+        self.training_folder = training_folder
+
+        # If path doesn't exist here
+        self.current_folder.mkdir(parents=True, exist_ok=True)
+        self.training_folder.mkdir(parents=True, exist_ok=True)
 
         self.organism = tk.StringVar()
         self.camera_index = tk.StringVar(value="0")
@@ -29,6 +51,16 @@ class SensorGUI :
         self.status = tk.StringVar(value="Status: Idle")
         self.run_id = tk.StringVar(value="Run ID: None")
         self.error = tk.StringVar(value="Error: None")
+        
+        self.elapsed = tk.StringVar(value="Elasped: 0s")
+        self.capture_count = tk.StringVar(value="Captures: 0")
+        self.run_folder = tk.StringVar(value="Run folder: None")
+        self.last_saved_image = tk.StringVar(value="Last image: None")
+        self.last_message = tk.StringVar(value="Message: Idle")
+
+        self.last_seen_alert_id = 0 # To avoid continuous popups
+        self.alert_popup_open = False
+
         self.stop_requested = False
 
         self.build_widgets()
@@ -53,20 +85,22 @@ class SensorGUI :
         organism_label = tk.Label(organism_frame, text="Organism")
         organism_label.pack(side=tk.LEFT)
 
-        self.organism_options = get_organism_options("training")
+        self.organism_options = get_organism_options(self.training_folder)
         # Dropdown
         if self.organism_options : 
             self.organism.set(self.organism_options[0])
+            self.organism_menu = tk.OptionMenu(organism_frame, self.organism, *self.organism_options)
         else :
             # Set to empty string
             self.organism.set("")
+            self.organism_menu = tk.OptionMenu(organism_frame, self.organism, "")
 
-        self.organism_menu = tk.OptionMenu(organism_frame, self.organism, *self.organism_options)
+
         self.organism_menu.pack(side=tk.LEFT)
 
         # Create new organism
-        create_organism_button = tk.Button(organism_frame, text="Create New", command=self.create_new_organism)
-        create_organism_button.pack(side=tk.LEFT, padx=5)
+        self.create_organism_button = tk.Button(organism_frame, text="Create New", command=self.create_new_organism)
+        self.create_organism_button.pack(side=tk.LEFT, padx=5)
 
         # Camera
         camera_frame = tk.Frame(self.root)
@@ -74,24 +108,24 @@ class SensorGUI :
 
         camera_label = tk.Label(camera_frame, text="Camera Index:")
         camera_label.pack(side=tk.LEFT)
-        camera_entry = tk.Entry(camera_frame, textvariable=self.camera_index, width=10)
-        camera_entry.pack(side=tk.LEFT)
+        self.camera_entry = tk.Entry(camera_frame, textvariable=self.camera_index, width=10)
+        self.camera_entry.pack(side=tk.LEFT)
 
         # Duration
         duration_frame = tk.Frame(self.root)
         duration_frame.pack(pady=5)
         duration_label = tk.Label(duration_frame, text="Duration minutes: ")
         duration_label.pack(side=tk.LEFT)
-        duration_entry = tk.Entry(duration_frame, textvariable=self.duration, width=10)
-        duration_entry.pack(side=tk.LEFT)
+        self.duration_entry = tk.Entry(duration_frame, textvariable=self.duration, width=10)
+        self.duration_entry.pack(side=tk.LEFT)
 
         # Interval
         interval_frame = tk.Frame(self.root)
         interval_frame.pack(pady=5)
         interval_label = tk.Label(interval_frame, text="Interval minutes:")
         interval_label.pack(side=tk.LEFT)
-        interval_entry = tk.Entry(interval_frame, textvariable=self.interval, width=10)
-        interval_entry.pack(side=tk.LEFT)
+        self.interval_entry = tk.Entry(interval_frame, textvariable=self.interval, width=10)
+        self.interval_entry.pack(side=tk.LEFT)
 
         # Create a frame for start and stop buttons.
         button_frame = tk.Frame(self.root)
@@ -117,6 +151,15 @@ class SensorGUI :
         error_label = tk.Label(self.root, textvariable=self.error)
         error_label.pack(pady=5)
 
+        # Elasped time
+        elapsed_label = tk.Label(self.root, textvariable=self.elapsed)
+        elapsed_label.pack(pady=3)
+
+        # Capture count
+        capture_count_label = tk.Label(self.root, textvariable=self.capture_count)
+        capture_count_label.pack(pady=3)
+
+
 
     def create_new_organism(self) : 
         """
@@ -140,7 +183,7 @@ class SensorGUI :
             messagebox.showerror("Error", "Organism name can only contain letters, numbers, and underscores.")
             return
         
-        organism_path = Path("training") / organism_name
+        organism_path = Path(self.training_folder) / organism_name
         organism_path.mkdir(parents=True, exist_ok=True)
 
         # Refresh organism dropdown 
@@ -154,7 +197,7 @@ class SensorGUI :
         """
         Opens recovery popup window
         """
-        if not current_folder_has_contents("current") : 
+        if not current_folder_has_contents(self.current_folder) : 
             messagebox.showinfo("No Old Runs", "current folder is empty.")
 
             self.update_recovery_button_state()
@@ -188,12 +231,13 @@ class SensorGUI :
         """
         Moves all valid current folder runs from the recovery popup
         """
-        moved_count, skipped_count = move_valid_runs_to_training()
+        moved_count, skipped_count = move_valid_runs_to_training(current_folder=self.current_folder, training_folder=self.training_folder)
 
         self.refresh_organism_menu()
         self.update_recovery_button_state()
         recovery_window.destroy()
         messagebox.showinfo("Recovery Complete", f"Moved {moved_count} valid run(s).\nSkipped {skipped_count} invalid/incomplete run(s).")
+        wipe_folder_contents(self.current_folder)
 
     def recovery_delete_current(self, recovery_window) : 
         """
@@ -203,7 +247,7 @@ class SensorGUI :
 
         if not confirm : 
             return
-        wipe_folder_contents("current")
+        wipe_folder_contents(self.current_folder)
 
         self.update_status_loop()
         recovery_window.destroy()
@@ -215,7 +259,7 @@ class SensorGUI :
         Updates the recovery button enabled/disabled state
         """
 
-        has_contents = current_folder_has_contents("current")
+        has_contents = current_folder_has_contents(self.current_folder)
 
         if has_contents and not self.controller.is_running:  # Enabled, only can press when not actively running experiment
             self.recovery_button.config(state=tk.NORMAL) # Allow user to press
@@ -224,7 +268,7 @@ class SensorGUI :
 
 
     def refresh_organism_menu(self) : 
-        organism_options = get_organism_options("training")
+        organism_options = get_organism_options(self.training_folder)
 
         menu = self.organism_menu["menu"]
         # Delete old entries
@@ -273,13 +317,18 @@ class SensorGUI :
                 camera_index=camera_index,
                 duration_seconds=duration_seconds,
                 interval_seconds=interval_seconds,
-                output_root="current"
+                output_root=self.current_folder
             )
 
             # Update labels
             self.run_id.set(f"Run ID: {run_id}")
             self.status.set("Status: Running")
             self.error.set("Error: None")
+            self.last_seen_alert_id = 0
+            self.alert_popup_open = False
+
+            # Update controls immediately after starting experiment
+            self.update_control_states()
 
         except RuntimeError as error : 
             messagebox.showerror("Error", str(error))
@@ -294,19 +343,35 @@ class SensorGUI :
 
 
     def update_status_loop(self) : 
-        if self.controller.is_running and not self.stop_requested : 
-            self.status.set("Status: Running")
-            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
-            self.stop_button.config(state=tk.NORMAL) # Allow user to press
 
-        elif self.controller.is_running and self.stop_requested : 
-            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
-            self.stop_button.config(state=tk.DISABLED) # Dont user to press
-        
-        else : 
-            self.status.set("Status: Idle")
-            self.start_button.config(state=tk.NORMAL) # Dont allow user to press
-            self.stop_button.config(state=tk.DISABLED) # Allow user to press
+        status = self.controller.get_status()
+        elapsed_seconds = status.get("elapsed_seconds", 0.0)
+        capture_count = status.get("capture_count", 0)
+        run_folder = status.get("run_folder", None)
+        last_saved_image = status.get("last_saved_image", None)
+        last_message = status.get("last_message", "Idle")
+
+
+        capture_error = status.get("last_error", None)
+        last_capture_result = status.get("last_capture_result", "None")
+
+        alert_message = status.get("alert_message", None)
+        alert_id = status.get("alert_id", 0)
+
+        new_alert_exists = alert_message is not None and alert_id != self.last_seen_alert_id
+
+        # Check if alert popup is open
+        popup_is_available = not self.alert_popup_open
+
+        if new_alert_exists and popup_is_available : 
+            self.last_seen_alert_id = alert_id
+            self.alert_popup_open = True
+
+            try : 
+                messagebox.showwarning("Capture Warning", alert_message)
+
+            finally : 
+                self.alert_popup_open = False
 
         # Check for errors
         if self.controller.last_error is not None : 
@@ -315,18 +380,83 @@ class SensorGUI :
 
         # Check if experiment is done and has a run folder to move
         if not self.controller.is_running and self.controller.last_run_folder is not None : 
-            move_run_to_training(self.controller.last_run_folder, training_folder="training")
+            move_run_to_training(self.controller.last_run_folder, training_folder=self.training_folder, current_folder=self.current_folder)
             
             # Clear last_run_folder
             self.controller.last_run_folder = None
 
+            wipe_folder_contents(self.current_folder)
+
             self.refresh_organism_menu()
 
-        self.update_recovery_button_state()
+
+        # Update button and input states based on whether experiment is running
+        self.update_control_states()
+
+        self.elapsed.set(f"Elapsed: {format_elapsed(elapsed_seconds)}")
+        self.capture_count.set(f"Captures: {capture_count}")
+        
+        if run_folder is not None : 
+            self.run_folder.set(f"Run folder: {run_folder}")
+        else : 
+            self.run_folder.set("Run folder: None")
+
+        if last_saved_image is not None : 
+            self.last_saved_image.set(f"Last image: {last_saved_image}")
+        else : 
+            self.last_saved_image.set("Last image: None")
+
+        self.last_message.set(f"Message: {last_message}")
 
         # Schedule to run again after 500ms
         self.root.after(500, self.update_status_loop)
 
+    def update_control_states(self) : 
+        """
+        Enables or disables controls based on experiment status
+        """
+        if self.controller.is_running and not self.stop_requested : 
+            self.status.set("Status: Running")
+            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
+            self.stop_button.config(state=tk.NORMAL) # Allow user to press
+            
+            self.organism_menu.config(state=tk.DISABLED)
+            self.camera_entry.config(state=tk.DISABLED)
+            self.create_organism_button.config(state=tk.DISABLED)
+            self.interval_entry.config(state=tk.DISABLED)
+            self.recovery_button.config(state=tk.DISABLED)
+            self.duration_entry.config(state=tk.DISABLED)
+
+        elif self.controller.is_running and self.stop_requested : 
+            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
+            self.stop_button.config(state=tk.DISABLED) # Dont user to press
+            self.organism_menu.config(state=tk.DISABLED)
+            self.camera_entry.config(state=tk.DISABLED)
+            self.create_organism_button.config(state=tk.DISABLED)
+            self.interval_entry.config(state=tk.DISABLED)
+            self.recovery_button.config(state=tk.DISABLED)
+            self.duration_entry.config(state=tk.DISABLED)
+
+
+        else : 
+            self.stop_requested = False
+            self.status.set("Status: Idle")
+            self.start_button.config(state=tk.NORMAL) # Dont allow user to press
+            self.stop_button.config(state=tk.DISABLED) # Allow user to press
+
+            self.organism_menu.config(state=tk.NORMAL)
+            self.camera_entry.config(state=tk.NORMAL)
+            self.create_organism_button.config(state=tk.NORMAL)
+            self.interval_entry.config(state=tk.NORMAL)
+            self.recovery_button.config(state=tk.NORMAL)
+            self.duration_entry.config(state=tk.NORMAL)
+
+
+            self.update_recovery_button_state()
+
+
 
     def run(self) : 
         self.root.mainloop()
+
+    
