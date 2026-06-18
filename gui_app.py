@@ -58,6 +58,9 @@ class SensorGUI :
         self.last_saved_image = tk.StringVar(value="Last image: None")
         self.last_message = tk.StringVar(value="Message: Idle")
 
+        self.last_seen_alert_id = 0 # To avoid continuous popups
+        self.alert_popup_open = False
+
         self.stop_requested = False
 
         self.build_widgets()
@@ -321,6 +324,8 @@ class SensorGUI :
             self.run_id.set(f"Run ID: {run_id}")
             self.status.set("Status: Running")
             self.error.set("Error: None")
+            self.last_seen_alert_id = 0
+            self.alert_popup_open = False
 
             # Update controls immediately after starting experiment
             self.update_control_states()
@@ -345,6 +350,28 @@ class SensorGUI :
         run_folder = status.get("run_folder", None)
         last_saved_image = status.get("last_saved_image", None)
         last_message = status.get("last_message", "Idle")
+
+
+        capture_error = status.get("last_error", None)
+        last_capture_result = status.get("last_capture_result", "None")
+
+        alert_message = status.get("alert_message", None)
+        alert_id = status.get("alert_id", 0)
+
+        new_alert_exists = alert_message is not None and alert_id != self.last_seen_alert_id
+
+        # Check if alert popup is open
+        popup_is_available = not self.alert_popup_open
+
+        if new_alert_exists and popup_is_available : 
+            self.last_seen_alert_id = alert_id
+            self.alert_popup_open = True
+
+            try : 
+                messagebox.showwarning("Capture Warning", alert_message)
+
+            finally : 
+                self.alert_popup_open = False
 
         # Check for errors
         if self.controller.last_error is not None : 

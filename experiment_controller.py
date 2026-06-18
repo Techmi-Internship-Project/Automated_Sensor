@@ -29,6 +29,8 @@ class ExperimentController :
             "last_saved_image": None, # Most recently saved image path
             "run_folder": None, # Store current run folder path
             "last_message": "Idle", # Most recent status message
+            "alert_message": None, # For specific error handling
+            "alert_id" : 0 # For popup handling
         }
         
 
@@ -56,7 +58,9 @@ class ExperimentController :
             capture_count=0,
             last_saved_image=None,
             run_folder=None,
-            last_message="Starting experiment..."
+            last_message="Starting experiment...",
+            alert_message=None,
+            alert_id=0
         )
 
         self.thread = threading.Thread(
@@ -153,6 +157,9 @@ class ExperimentController :
 
         # Lock status dictionary so only one thread edits
         with self.status_lock : 
+            if "alert_message" in kwargs and kwargs["alert_message"] is not None :
+                kwargs["alert_id"] = self.status.get("alert_id", 0) + 1
+            
             self.status.update(kwargs)
 
 

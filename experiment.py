@@ -129,14 +129,25 @@ def run_experiment(
                     send_status(
                         capture_count=capture_number + 1,
                         last_saved_image=str(filepath),
-                        last_message=f"Saved {filepath.name}"
+                        last_message=f"Saved {filepath.name}",
+                        last_error=None,
+                        last_capture_result="Success"
                     )
 
                     capture_number += 1
 
                 except RuntimeError as error:
-                    send_status(last_message=f"Capture failed: {error}")
+                    error_text = str(error)
                     print(f"Capture failed: {error}")
+
+                    if "ARUCO_NOT_FOUND" in error_text : 
+                        send_status(
+                            last_capture_result="ArUco markers missing",
+                            last_error=error_text,
+                            alert_message="Could not detect all four ArUco markers.\n\n"
+                        )      
+                    else : 
+                        send_status(last_capture_result="Failed", last_message=error_text)
 
                 # Schedule next capture from original timeline
                 next_capture_time += interval_seconds
