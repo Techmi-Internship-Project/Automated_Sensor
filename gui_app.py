@@ -8,6 +8,7 @@ from experiment_controller import ExperimentController
 from startup_recovery import move_valid_runs_to_training, current_folder_has_contents, wipe_folder_contents, move_run_to_training
 from organism_menu import get_organism_options
 from camera_tools import scan_available_cameras
+from camera_setup_window import CameraSetupWindow
 
 
 def format_elapsed(seconds) : 
@@ -72,6 +73,8 @@ class SensorGUI :
 
         self.stop_requested = False
 
+        self.camera_setup_open = False
+
         self.build_widgets()
         self.update_status_loop() # Start repeated GUI status updater
 
@@ -133,6 +136,8 @@ class SensorGUI :
         self.camera_menu["menu"].config(postcommand=self.refresh_camera_menu_on_open)
         self.camera_menu.pack(side=tk.LEFT, padx=5)
 
+        self.camera_setup_button = tk.Button(camera_frame, text="Setup", command=self.open_camera_setup_window)
+        self.camera_setup_button.pack(side=tk.LEFT, padx=5)
 
         # Duration
         duration_frame = tk.Frame(self.root)
@@ -272,7 +277,7 @@ class SensorGUI :
             return
         wipe_folder_contents(self.current_folder)
 
-        self.update_status_loop()
+        self.update_recovery_button_state()
         recovery_window.destroy()
         messagebox.showinfo("Deleted", "Everything inside current folder was deleted")
 
@@ -373,6 +378,38 @@ class SensorGUI :
 
         return self.camera_label_to_index[selected_label]
     
+    def open_camera_setup_window(self) : 
+        """
+        Accesses CameraSetupWindow class to open the setup window
+        """
+        if self.controller.is_running : 
+            messagebox.showerror("Camera Busy", "Stop the experiment to setup camera")
+            return
+        
+        if self.camera_setup_open : 
+            return # Already exists
+        
+        try : 
+            camera_index = self.get_selected_camera_index()
+
+        except RuntimeError as error : 
+            messagebox.showerror("Camera Error", str(error))
+            return 
+        
+        self.camera_setup_open = True
+        # Update states before opening window to avoid user doing silly stuff
+        self.update_control_states()
+
+        # Create the window
+        CameraSetupWindow(parent=self.root, camera_index=camera_index, on_close=self.on_camera_setup_close)
+
+    def on_camera_setup_close(self) : 
+        """
+        Callback for when the camera setup window closes
+        """
+        self.camera_setup_open = False
+        self.update_control_states()
+
     def start_experiment(self) : 
         """
         Starts experiment
@@ -524,7 +561,7 @@ class SensorGUI :
             self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
             self.duration_entry.config(state=tk.DISABLED)
-
+            self.camera_setup_button.config(state=tk.DISABLED)
 
         else : 
             self.stop_requested = False
@@ -538,9 +575,21 @@ class SensorGUI :
             self.interval_entry.config(state=tk.NORMAL)
             self.recovery_button.config(state=tk.NORMAL)
             self.duration_entry.config(state=tk.NORMAL)
+            self.camera_setup_button.config(state=tk.NORMAL)
 
 
-            self.update_recovery_button_state()
+        if self.camera_setup_open : 
+            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
+            self.stop_button.config(state=tk.DISABLED) # Dont user to press
+            
+            self.organism_menu.config(state=tk.DISABLED)
+            self.camera_menu.config(state=tk.DISABLED)
+            self.create_organism_button.config(state=tk.DISABLED)
+            self.interval_entry.config(state=tk.DISABLED)
+            self.recovery_button.config(state=tk.DISABLED)
+            self.duration_entry.config(state=tk.DISABLED)
+            self.camera_setup_button.config(state=tk.DISABLED)
+
 
 
 
