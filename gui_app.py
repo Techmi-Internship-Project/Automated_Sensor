@@ -94,7 +94,7 @@ class SensorGUI :
         organism_frame = tk.Frame(self.root)
         organism_frame.pack(pady=5)
 
-        organism_label = tk.Label(organism_frame, text="Organism")
+        organism_label = tk.Label(organism_frame, text="Organism: ")
         organism_label.pack(side=tk.LEFT)
 
         self.organism_options = get_organism_options(self.training_folder)
