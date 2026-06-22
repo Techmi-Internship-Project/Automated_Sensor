@@ -25,6 +25,7 @@ class ExperimentController :
         self.status = { # Dictionary for live status updates
             "state": "idle",
             "elapsed_seconds": 0,
+            "duration_seconds" : 0, # For progress bar
             "capture_count": 0,
             "last_saved_image": None, # Most recently saved image path
             "run_folder": None, # Store current run folder path
@@ -55,6 +56,7 @@ class ExperimentController :
         self.update_status(
             state="starting",
             elapsed_seconds=0.0,
+            duration_seconds=duration_seconds,
             capture_count=0,
             last_saved_image=None,
             run_folder=None,

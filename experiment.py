@@ -89,7 +89,7 @@ def run_experiment(
             current_time = time.monotonic()
             elapsed_time = current_time - start_time
 
-            send_status(elapsed_seconds=elapsed_time)
+            send_status(elapsed_seconds=elapsed_time, duration_seconds=duration_seconds)
 
             # Stop once duration reached
             if elapsed_time >= duration_seconds:

@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, ttk
 import re
 
 from pathlib import Path
@@ -62,7 +62,10 @@ class SensorGUI :
         self.run_id = tk.StringVar(value="Run ID: None")
         self.error = tk.StringVar(value="Error: None")
         
-        self.elapsed = tk.StringVar(value="Elasped: 0s")
+        self.elapsed = tk.StringVar(value="Elapsed: 0s")
+        self.remaining = tk.StringVar(value="Remaining: 0s")
+        self.progress_text = tk.StringVar(value="Progress: 0%")
+
         self.capture_count = tk.StringVar(value="Captures: 0")
         self.run_folder = tk.StringVar(value="Run folder: None")
         self.last_saved_image = tk.StringVar(value="Last image: None")
@@ -182,6 +185,19 @@ class SensorGUI :
         # Elasped time
         elapsed_label = tk.Label(self.root, textvariable=self.elapsed)
         elapsed_label.pack(pady=3)
+
+        # Remaining time
+        remaining_label = tk.Label(self.root, textvariable=self.remaining)
+        remaining_label.pack(pady=3)
+
+        # Progress label
+        progress_text_label = tk.Label(self.root, textvariable=self.progress_text)
+        progress_text_label.pack(pady=3)
+
+        # Progress Bar
+        self.progress_bar = ttk.Progressbar(self.root, orient=tk.HORIZONTAL, length=400, mode="determinate")
+        self.progress_bar["maximum"] = 100
+        self.progress_bar.pack(pady=5)
 
         # Capture count
         capture_count_label = tk.Label(self.root, textvariable=self.capture_count)
@@ -448,6 +464,7 @@ class SensorGUI :
             self.run_id.set(f"Run ID: {run_id}")
             self.status.set("Status: Running")
             self.error.set("Error: None")
+            self.update_progress_display(0, duration_seconds)
             self.last_seen_alert_id = 0
             self.alert_popup_open = False
 
@@ -470,6 +487,7 @@ class SensorGUI :
 
         status = self.controller.get_status()
         elapsed_seconds = status.get("elapsed_seconds", 0.0)
+        duration_seconds = status.get("duration_seconds", 0.0)
         capture_count = status.get("capture_count", 0)
         run_folder = status.get("run_folder", None)
         last_saved_image = status.get("last_saved_image", None)
@@ -517,7 +535,7 @@ class SensorGUI :
         # Update button and input states based on whether experiment is running
         self.update_control_states()
 
-        self.elapsed.set(f"Elapsed: {format_elapsed(elapsed_seconds)}")
+        self.update_progress_display(elapsed_seconds, duration_seconds)
         self.capture_count.set(f"Captures: {capture_count}")
         
         if run_folder is not None : 
@@ -535,6 +553,28 @@ class SensorGUI :
         # Schedule to run again after 500ms
         self.root.after(500, self.update_status_loop)
 
+
+    def update_progress_display(self, elapsed_seconds, duration_seconds) : 
+        """
+        Helper function for updating the progress bar
+        """
+
+        if duration_seconds <= 0 : 
+            # Invalid so just set to 0
+            progress_percent = 0
+            remaining_seconds = 0
+
+        else : 
+            progress_percent = (elapsed_seconds / duration_seconds) * 100
+            # Clamp so it does not go above 100 or below 0
+            progress_percent = max(0, min(100, progress_percent))
+            remaining_seconds = max(0, duration_seconds - elapsed_seconds)
+
+        self.elapsed.set(f"Elapsed: {format_elapsed(elapsed_seconds)}")
+        self.remaining.set(f"Remaining: {format_elapsed(remaining_seconds)}")
+        self.progress_text.set(f"Progress: {progress_percent:.0f}%")
+        self.progress_bar["value"] = progress_percent
+    
     def update_control_states(self) : 
         """
         Enables or disables controls based on experiment status
