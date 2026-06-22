@@ -167,8 +167,11 @@ def move_valid_runs_to_training(current_folder="current", training_folder="train
 
         # Check if should be moved
         if run_state in ["completed", "interrupted"] and image_count > 0 : 
-            move_run_to_training(run_folder, training_folder=training_folder)
-            moved_count += 1
+            move_success = move_run_to_training(run_folder, training_folder=training_folder)
+            if move_success :
+                moved_count += 1
+            else : 
+                skipped_count += 1
 
         else : 
             # Runs that should not be moved

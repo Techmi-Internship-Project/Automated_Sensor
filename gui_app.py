@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 from experiment_controller import ExperimentController
-from startup_recovery import move_valid_runs_to_training, current_folder_has_contents, wipe_folder_contents, move_run_to_training
+from startup_recovery import move_valid_runs_to_training, current_folder_has_contents, wipe_folder_contents, move_run_to_training, build_training_destination
 from organism_menu import get_organism_options
 from camera_tools import scan_available_cameras
 from camera_setup_window import CameraSetupWindow
@@ -77,6 +77,8 @@ class SensorGUI :
         self.stop_requested = False
 
         self.camera_setup_open = False
+
+        self.last_summary_run_folder = None # To prevent repeated run summary popups
 
         self.build_widgets()
         self.update_status_loop() # Start repeated GUI status updater
@@ -522,7 +524,11 @@ class SensorGUI :
 
         # Check if experiment is done and has a run folder to move
         if not self.controller.is_running and self.controller.last_run_folder is not None : 
-            move_run_to_training(self.controller.last_run_folder, training_folder=self.training_folder, current_folder=self.current_folder)
+            
+            completed_run_folder = self.controller.last_run_folder
+            destination_folder = build_training_destination(completed_run_folder, self.training_folder)
+        
+            move_success = move_run_to_training(completed_run_folder, training_folder=self.training_folder,current_folder=self.current_folder)
             
             # Clear last_run_folder
             self.controller.last_run_folder = None
@@ -530,6 +536,25 @@ class SensorGUI :
             wipe_folder_contents(self.current_folder)
 
             self.refresh_organism_menu()
+
+            # Check if summary was shown
+            if move_success and destination_folder is not None : 
+                destination_text = str(destination_folder)
+
+                if self.last_summary_run_folder != destination_text : 
+                    # Store so summary does not repeat
+                    self.last_summary_run_folder = destination_text
+                # Show the popup
+                    self.show_run_completed_summary(
+                        run_folder=run_folder,
+                        capture_count=capture_count,
+                        elapsed_seconds=elapsed_seconds
+                    )
+
+                else :
+                    messagebox.showerror(
+                        "Move Failed",
+                        "Run finished, but could not be moved to the training folder.\n\nCheck current/ and training/ folders")
 
 
         # Update button and input states based on whether experiment is running
@@ -590,6 +615,8 @@ class SensorGUI :
             self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
             self.duration_entry.config(state=tk.DISABLED)
+            self.camera_setup_button.config(state=tk.DISABLED)
+
 
         elif self.controller.is_running and self.stop_requested : 
             self.start_button.config(state=tk.DISABLED) # Dont allow user to press
@@ -615,6 +642,7 @@ class SensorGUI :
             self.interval_entry.config(state=tk.NORMAL)
             self.recovery_button.config(state=tk.NORMAL)
             self.duration_entry.config(state=tk.NORMAL)
+            self.camera_setup_button.config(state=tk.NORMAL)
             self.update_recovery_button_state()
 
         if self.camera_setup_open : 
@@ -630,6 +658,21 @@ class SensorGUI :
             self.camera_setup_button.config(state=tk.DISABLED)
 
 
+    def show_run_completed_summary(self, run_folder, capture_count, elapsed_seconds) : 
+        """
+        Shows popup of a summary of the completed run
+        """
+
+        run_folder_text = str(run_folder)
+
+        summary_message=(
+            f"Run completed successfully.\n\n"
+            f"Captures saved: {capture_count}\n"
+            f"Elapsed time: {format_elapsed(elapsed_seconds)}\n\n"
+            f"Moved to training folder:\n{run_folder_text}"
+        )
+
+        messagebox.showinfo("Run Complete", summary_message)
 
 
     def run(self) : 
