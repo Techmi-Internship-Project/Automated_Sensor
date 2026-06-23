@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 import re
+import time
 
 from pathlib import Path
 
@@ -16,15 +17,27 @@ def format_elapsed(seconds) :
         Easy to read time format
         """
         seconds = int(seconds)
+
+        # Time less than one minute
         if seconds < 60 : 
             return f"{seconds}s"
-        elif seconds < 3600 : # Minutes only but not hours 
+        
+        # Time less than one hours
+        elif seconds < 3600 : 
             minutes, secs = divmod(seconds, 60)
             return f"{minutes}m {secs}s"
-        else : 
+        
+        # Time less than one day
+        elif seconds < 86400 : 
             hours, remainder = divmod(seconds, 3600)
             minutes, secs = divmod(remainder, 60)
             return f"{hours}h {minutes}m {secs}s"
+        # One day or longer
+        else : 
+            days, remainder = divmod(seconds, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes, secs = divmod(remainder, 60)
+            return f"{days}d {hours}h {minutes}m"
 class SensorGUI : 
     """
     Class for the GUI
@@ -60,7 +73,17 @@ class SensorGUI :
         self.duration_minutes = tk.StringVar(value="0")
         
         self.interval_hours = tk.StringVar(value="0")
-        self.interval_minutes = tk.StringVar(value="0")
+        self.interval_minutes = tk.StringVar(value="20")
+
+        self.estimated_duration_text = tk.StringVar(value="Total run time: 0m")
+        self.estimated_capture_count = tk.StringVar(value="Estimated captures: 0")
+        self.estimated_finish_text = tk.StringVar(value="Estimated finish: --")
+
+        self.duration_days.trace_add("write", lambda *args: self.update_timing_estimates())
+        self.duration_hours.trace_add("write", lambda *args: self.update_timing_estimates())
+        self.duration_minutes.trace_add("write", lambda *args: self.update_timing_estimates())
+        self.interval_hours.trace_add("write", lambda *args: self.update_timing_estimates())
+        self.interval_minutes.trace_add("write", lambda *args: self.update_timing_estimates())
 
 
         self.status = tk.StringVar(value="Status: Idle")
@@ -151,52 +174,93 @@ class SensorGUI :
         self.camera_setup_button = tk.Button(camera_frame, text="Setup", command=self.open_camera_setup_window)
         self.camera_setup_button.pack(side=tk.LEFT, padx=5)
 
+        # Timing Frame
+        timing_frame = tk.LabelFrame(self.root, text="Experiment Timing", padx=10, pady=8)
+        timing_frame.pack(fill=tk.X, padx=20, pady=8)
+
         # Duration 
         # ----------
-        duration_frame = tk.Frame(self.root)
-        duration_frame.pack(pady=5)
-        duration_label = tk.Label(duration_frame, text="Duration: ")
+        duration_frame = tk.Frame(timing_frame)
+        duration_frame.pack(fill=tk.X, pady=3)
+        duration_label = tk.Label(duration_frame, text="Duration: ", width=14, anchor="w")
         duration_label.pack(side=tk.LEFT)
         
         # Days
         self.duration_days_entry = tk.Entry(duration_frame, textvariable=self.duration_days, width=5)
-        self.duration_days_entry.pack(side=tk.LEFT, padx=2)
+        self.duration_days_entry.pack(side=tk.LEFT, padx=(0,3))
         
         duration_days_label = tk.Label(duration_frame, text="Days")
-        duration_days_label.pack(side=tk.LEFT)
+        duration_days_label.pack(side=tk.LEFT, padx=(0,8))
 
         # Hours
         self.duration_hours_entry = tk.Entry(duration_frame, textvariable=self.duration_hours, width=5)
-        self.duration_hours_entry.pack(side=tk.LEFT, padx=2)
+        self.duration_hours_entry.pack(side=tk.LEFT, padx=(0,8))
         
         duration_hours_label = tk.Label(duration_frame, text="Hours")
-        duration_hours_label.pack(side=tk.LEFT)
+        duration_hours_label.pack(side=tk.LEFT, padx=(0,3))
 
         # Minutes
         self.duration_minutes_entry = tk.Entry(duration_frame, textvariable=self.duration_minutes, width=10)
-        self.duration_minutes_entry.pack(side=tk.LEFT, pady=2)
+        self.duration_minutes_entry.pack(side=tk.LEFT, padx=(0,3))
 
         duration_minutes_label = tk.Label(duration_frame, text="Mins")
         duration_minutes_label.pack(side=tk.LEFT)
 
         # Interval
         # -----------
-        interval_frame = tk.Frame(self.root)
+        interval_frame = tk.Frame(timing_frame)
         interval_frame.pack(pady=5)
         interval_label = tk.Label(interval_frame, text="Interval:")
-        interval_label.pack(side=tk.LEFT)
+        interval_label.pack(fill=tk.X, pady=3)
         
         # Hours
         self.interval_hours_entry = tk.Entry(interval_frame, textvariable=self.interval_hours, width=5)
-        self.interval_hours_entry.pack(side=tk.LEFT)
+        self.interval_hours_entry.pack(side=tk.LEFT, padx=(0,3))
         interval_hours_label = tk.Label(interval_frame, text="Hours")
-        interval_hours_label.pack(side=tk.LEFT)
+        interval_hours_label.pack(side=tk.LEFT, padx=(0,8))
 
         # Minutes
         self.interval_minutes_entry = tk.Entry(interval_frame, textvariable=self.interval_minutes, width=5)
-        self.interval_minutes_entry.pack(side=tk.LEFT)
+        self.interval_minutes_entry.pack(side=tk.LEFT,padx=(0,3))
         interval_minutes_label = tk.Label(interval_frame, text="Mins")
         interval_minutes_label.pack(side=tk.LEFT)
+
+        # Preset
+        preset_frame = tk.Frame(timing_frame)
+        preset_frame.pack(fill=tk.X, pady=(8,3))
+        preset_label = tk.Label(preset_frame, text="Duration: ", width=14, anchor="w")
+        preset_label.pack(side=tk.LEFT)
+
+        preset_6h_button = tk.Button(preset_frame, text="6h", command=lambda: self.set_duration_preset(hours=6))
+        preset_6h_button.pack(side=tk.LEFT, padx=2)
+
+        preset_12h_button = tk.Button(preset_frame, text="12h", command=lambda: self.set_duration_preset(hours=12))
+        preset_12h_button.pack(side=tk.LEFT, padx=2)
+        
+        preset_24h_button = tk.Button(preset_frame, text="24h", command=lambda: self.set_duration_preset(days=1))
+        preset_24h_button.pack(side=tk.LEFT, padx=2)
+
+        preset_48h_button = tk.Button(preset_frame, text="48h", command=lambda: self.set_duration_preset(days=2))
+        preset_48h_button.pack(side=tk.LEFT, padx=2)
+
+        preset_72h_button = tk.Button(preset_frame, text="72h", command=lambda: self.set_duration_preset(days=3))
+        preset_72h_button.pack(side=tk.LEFT, padx=2)
+
+        # Estimation
+        estimate_frame = tk.Frame(timing_frame)
+        estimate_frame.pack(fill=tk.X, pady=(8,0))
+
+        estimated_duration_label = tk.Label(estimate_frame, textvariable=self.estimated_duration_text, anchor="w")
+        estimated_duration_label.pack(fill=tk.X)
+
+        estimated_captures_label = tk.Label(estimate_frame, textvariable=self.estimated_capture_count, anchor="w")
+        estimated_captures_label.pack(fill=tk.X)
+
+        estimated_finish_label = tk.Label(estimate_frame, textvariable=self.estimated_finish_text, anchor="w")
+        estimated_finish_label.pack(fill=tk.X)
+        
+
+
 
         # Create a frame for start and stop buttons.
         button_frame = tk.Frame(self.root)
@@ -295,7 +359,7 @@ class SensorGUI :
         
         duration_seconds = days * 86400 + hours * 3600 + mins * 60
 
-        if duration_seconds < 0 : 
+        if duration_seconds <= 0 : 
             raise ValueError("Duration must be greater than 0.")
         
         return duration_seconds
@@ -318,6 +382,51 @@ class SensorGUI :
             raise ValueError("Interval must be greater than zero.")
         
         return interval_seconds
+
+
+    def set_duration_preset(self, days=0, hours=0, mins=0) : 
+        """
+        Sets the duration input fields from a preset button
+        """
+
+        self.duration_days.set(str(days))
+        self.duration_hours.set(str(hours))
+        self.duration_minutes.set(str(mins))
+
+        self.update_timing_estimates()
+
+    def update_timing_estimates(self) :
+        """
+        Updates duration, capture count, and finish time estimates
+        """
+
+        try : 
+            duration_seconds = self.get_duration_seconds_from_inputs()
+            interval_seconds = self.get_interval_seconds_from_inputs()
+
+        except ValueError: 
+            self.estimated_duration_text.set("Total run time: Invalid")
+            self.estimated_capture_count.set("Estimated captures: Invalid")
+            self.estimated_finish_text.set("Estimated finish: Invalid")
+            return 
+        
+        if interval_seconds <= 0 :
+            self.estimated_duration_text.set("Total run time: Invalid")
+            self.estimated_capture_count.set("Estimated captures: Invalid")
+            self.estimated_finish_text.set("Estimated finish: Invalid")
+
+            return
+    
+        duration_text = format_elapsed(duration_seconds)
+        # Estimate # of captures including capture at time 0
+        estimated_captures = int(duration_seconds // interval_seconds) + 1
+        
+        finish_timestamp = time.time() + duration_seconds
+        finish_text = time.strftime("%a %I:%M %p", time.localtime(finish_timestamp))
+        
+        self.estimated_duration_text.set(f"Total run time: {duration_text}")
+        self.estimated_capture_count.set(f"Estimated captures: {estimated_captures}")
+        self.estimated_finish_text.set(f"Estimated finish: {finish_text}")
 
 
     def open_recovery_window(self) : 
