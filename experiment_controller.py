@@ -135,10 +135,6 @@ class ExperimentController :
 
             # Check if the stop button was not requested.
             if not self.stop_event.is_set():
-
-                # Mark the run as completed successfully.
-                run_completed_successfully = True
-
                 # Update the GUI status as finished.
                 self.update_status(
                     state="finished",
