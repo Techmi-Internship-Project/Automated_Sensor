@@ -55,8 +55,13 @@ class SensorGUI :
 
 
         #Both in minutes
-        self.duration = tk.StringVar(value="0.5")
-        self.interval = tk.StringVar(value="0.1")
+        self.duration_days = tk.StringVar(value="0")
+        self.duration_hours = tk.StringVar(value="0")
+        self.duration_minutes = tk.StringVar(value="0")
+        
+        self.interval_hours = tk.StringVar(value="0")
+        self.interval_minutes = tk.StringVar(value="0")
+
 
         self.status = tk.StringVar(value="Status: Idle")
         self.run_id = tk.StringVar(value="Run ID: None")
@@ -146,21 +151,52 @@ class SensorGUI :
         self.camera_setup_button = tk.Button(camera_frame, text="Setup", command=self.open_camera_setup_window)
         self.camera_setup_button.pack(side=tk.LEFT, padx=5)
 
-        # Duration
+        # Duration 
+        # ----------
         duration_frame = tk.Frame(self.root)
         duration_frame.pack(pady=5)
-        duration_label = tk.Label(duration_frame, text="Duration minutes: ")
+        duration_label = tk.Label(duration_frame, text="Duration: ")
         duration_label.pack(side=tk.LEFT)
-        self.duration_entry = tk.Entry(duration_frame, textvariable=self.duration, width=10)
-        self.duration_entry.pack(side=tk.LEFT)
+        
+        # Days
+        self.duration_days_entry = tk.Entry(duration_frame, textvariable=self.duration_days, width=5)
+        self.duration_days_entry.pack(side=tk.LEFT, padx=2)
+        
+        duration_days_label = tk.Label(duration_frame, text="Days")
+        duration_days_label.pack(side=tk.LEFT)
+
+        # Hours
+        self.duration_hours_entry = tk.Entry(duration_frame, textvariable=self.duration_hours, width=5)
+        self.duration_hours_entry.pack(side=tk.LEFT, padx=2)
+        
+        duration_hours_label = tk.Label(duration_frame, text="Hours")
+        duration_hours_label.pack(side=tk.LEFT)
+
+        # Minutes
+        self.duration_minutes_entry = tk.Entry(duration_frame, textvariable=self.duration_minutes, width=10)
+        self.duration_minutes_entry.pack(side=tk.LEFT, pady=2)
+
+        duration_minutes_label = tk.Label(duration_frame, text="Mins")
+        duration_minutes_label.pack(side=tk.LEFT)
 
         # Interval
+        # -----------
         interval_frame = tk.Frame(self.root)
         interval_frame.pack(pady=5)
-        interval_label = tk.Label(interval_frame, text="Interval minutes:")
+        interval_label = tk.Label(interval_frame, text="Interval:")
         interval_label.pack(side=tk.LEFT)
-        self.interval_entry = tk.Entry(interval_frame, textvariable=self.interval, width=10)
-        self.interval_entry.pack(side=tk.LEFT)
+        
+        # Hours
+        self.interval_hours_entry = tk.Entry(interval_frame, textvariable=self.interval_hours, width=5)
+        self.interval_hours_entry.pack(side=tk.LEFT)
+        interval_hours_label = tk.Label(interval_frame, text="Hours")
+        interval_hours_label.pack(side=tk.LEFT)
+
+        # Minutes
+        self.interval_minutes_entry = tk.Entry(interval_frame, textvariable=self.interval_minutes, width=5)
+        self.interval_minutes_entry.pack(side=tk.LEFT)
+        interval_minutes_label = tk.Label(interval_frame, text="Mins")
+        interval_minutes_label.pack(side=tk.LEFT)
 
         # Create a frame for start and stop buttons.
         button_frame = tk.Frame(self.root)
@@ -244,6 +280,45 @@ class SensorGUI :
         self.organism.set(organism_name)
 
         messagebox.showinfo("Organism Created", f"Created organism: {organism_name}")
+
+    def get_duration_seconds_from_inputs(self) : 
+        """
+        Converts duration input fields into total seconds
+        """
+        # Read inputs
+        days = int(self.duration_days.get())
+        hours = int(self.duration_hours.get())
+        mins = int(self.duration_minutes.get())
+
+        if days < 0 or hours < 0 or mins < 0 :
+            raise ValueError("Duration values cannot be negative.")
+        
+        duration_seconds = days * 86400 + hours * 3600 + mins * 60
+
+        if duration_seconds < 0 : 
+            raise ValueError("Duration must be greater than 0.")
+        
+        return duration_seconds
+    
+
+    def get_interval_seconds_from_inputs(self) : 
+        """
+        Convert interval inpiut fields into total seconds
+        """
+
+        hours = int(self.interval_hours.get())
+        mins = int(self.interval_minutes.get())
+
+        if hours < 0 or mins < 0 :
+            raise ValueError("Interval values cannot be negative.")
+        
+        interval_seconds = hours * 3600 + mins * 60
+
+        if interval_seconds < 0 :
+            raise ValueError("Interval must be greater than zero.")
+        
+        return interval_seconds
+
 
     def open_recovery_window(self) : 
         """
@@ -455,16 +530,19 @@ class SensorGUI :
         # Try to parse numeric input fields
         try : 
             camera_index = self.get_selected_camera_index()
-            duration_minutes = float(self.duration.get())
-            interval_minutes = float(self.interval.get())
+            duration_seconds = self.get_duration_seconds_from_inputs()
+            interval_seconds = self.get_interval_seconds_from_inputs()
+
+            # Check if interval is longer than duration
+            if interval_seconds > duration_seconds : 
+                messagebox.showerror("Error", "Inverval cannot be longer than duration.")
+                return
 
         except ValueError:
             messagebox.showerror("Error", "Camera, duration, and interval must be valid numbers.")
             return
         
-        duration_seconds = duration_minutes * 60
-        interval_seconds = interval_minutes * 60
-
+     
         # Try to start experiment
         try: 
             run_id = self.controller.start_experiment(
@@ -662,9 +740,12 @@ class SensorGUI :
             self.organism_menu.config(state=tk.DISABLED)
             self.camera_menu.config(state=tk.DISABLED)
             self.create_organism_button.config(state=tk.DISABLED)
-            self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
-            self.duration_entry.config(state=tk.DISABLED)
+            self.duration_days_entry.config(state=tk.DISABLED)
+            self.duration_hours_entry.config(state=tk.DISABLED)
+            self.duration_minutes_entry.config(state=tk.DISABLED)
+            self.interval_hours_entry.config(state=tk.DISABLED)
+            self.interval_minutes_entry.config(state=tk.DISABLED)
             self.camera_setup_button.config(state=tk.DISABLED)
 
 
@@ -675,9 +756,11 @@ class SensorGUI :
             self.organism_menu.config(state=tk.DISABLED)
             self.camera_menu.config(state=tk.DISABLED)
             self.create_organism_button.config(state=tk.DISABLED)
-            self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
-            self.duration_entry.config(state=tk.DISABLED)
+            self.duration_hours_entry.config(state=tk.DISABLED)
+            self.duration_minutes_entry.config(state=tk.DISABLED)
+            self.interval_hours_entry.config(state=tk.DISABLED)
+            self.interval_minutes_entry.config(state=tk.DISABLED)
             self.camera_setup_button.config(state=tk.DISABLED)
 
         else : 
@@ -689,24 +772,28 @@ class SensorGUI :
             self.organism_menu.config(state=tk.NORMAL)
             self.camera_menu.config(state=tk.NORMAL)
             self.create_organism_button.config(state=tk.NORMAL)
-            self.interval_entry.config(state=tk.NORMAL)
             self.recovery_button.config(state=tk.NORMAL)
-            self.duration_entry.config(state=tk.NORMAL)
+            self.duration_days_entry.config(state=tk.NORMAL)
+            self.duration_hours_entry.config(state=tk.NORMAL)
+            self.duration_minutes_entry.config(state=tk.NORMAL)
+            self.interval_hours_entry.config(state=tk.NORMAL)
+            self.interval_minutes_entry.config(state=tk.NORMAL)
             self.camera_setup_button.config(state=tk.NORMAL)
             self.update_recovery_button_state()
 
-        if self.camera_setup_open : 
-            self.start_button.config(state=tk.DISABLED) # Dont allow user to press
-            self.stop_button.config(state=tk.DISABLED) # Dont user to press
-            
+        if self.camera_setup_open:
+            self.start_button.config(state=tk.DISABLED)
+            self.stop_button.config(state=tk.DISABLED)
             self.organism_menu.config(state=tk.DISABLED)
             self.camera_menu.config(state=tk.DISABLED)
             self.create_organism_button.config(state=tk.DISABLED)
-            self.interval_entry.config(state=tk.DISABLED)
             self.recovery_button.config(state=tk.DISABLED)
-            self.duration_entry.config(state=tk.DISABLED)
+            self.duration_days_entry.config(state=tk.DISABLED)
+            self.duration_hours_entry.config(state=tk.DISABLED)
+            self.duration_minutes_entry.config(state=tk.DISABLED)
+            self.interval_hours_entry.config(state=tk.DISABLED)
+            self.interval_minutes_entry.config(state=tk.DISABLED)
             self.camera_setup_button.config(state=tk.DISABLED)
-
 
     def show_run_completed_summary(self, run_folder, capture_count, elapsed_seconds) : 
         """
