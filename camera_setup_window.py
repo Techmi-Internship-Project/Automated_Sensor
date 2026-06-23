@@ -15,6 +15,7 @@ class CameraSetupWindow :
     """
 
     def __init__(self, parent, camera_index, on_close=None) :
+        
         # Parent Tkinter window
         self.parent = parent
         self.camera_index = camera_index
@@ -22,6 +23,7 @@ class CameraSetupWindow :
         # Function to run when this window closes
         self.on_close = on_close
 
+        
         # Create the popup window
         self.window = tk.Toplevel(self.parent)
         self.window.title("Camera Setup")
@@ -49,8 +51,18 @@ class CameraSetupWindow :
         self.roi_status = tk.StringVar(value="ROI: Not checked yet")
         self.laser_status = tk.StringVar(value="Idle")
 
+        
+        # Tell Tkinter what to do when the window is closed
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+
         self.build_widgets()
-        self.open_selected_camera()
+
+        camera_opened = self.open_selected_camera()
+        
+        if not camera_opened : 
+            # Camera error, leave safely
+            self.abort_setup_window() 
+            return # Stop __init__ 
 
         self.current_profile.set("normal")
         # Load json file into sliders
@@ -59,9 +71,7 @@ class CameraSetupWindow :
 
         self.open_laser_relay()
         
-        # Tell Tkinter what to do when the window is closed
-        self.window.protocol("WM_DELETE_WINDOW", self.close)
-
+        
         # Start updating live feed
         self.update_video_loop()
 
@@ -166,13 +176,14 @@ class CameraSetupWindow :
 
 
     def open_selected_camera(self) : 
+
         self.cap = open_camera(self.camera_index)
 
         if self.cap is None or not self.cap.isOpened() :
             messagebox.showerror("Camera Error", f"Could not open camera index {self.camera_index}.")
-            self.close()
+            return False
 
-            return
+        return True # Opened successfully
         
         set_normal_exposure(self.cap)
 
@@ -185,7 +196,7 @@ class CameraSetupWindow :
                 self.laser_is_on = False
                 self.laser_status.set("Laser: OFF")
 
-        except RuntimeError as error : 
+        except Exception as error : 
             self.laser = None
             self.laser_is_on = False
             self.laser_status.set("Laser: Not connected")
@@ -412,7 +423,7 @@ class CameraSetupWindow :
                 time.sleep(0.2)
                 self.laser.close()
 
-            except RuntimeError: 
+            except Exception: 
                 pass # Ignore cleanup errors while closing
 
             self.laser = None
@@ -420,7 +431,37 @@ class CameraSetupWindow :
         self.laser_is_on = False
         self.laser_status.set("Laser: OFF")
 
+    def abort_setup_window(self) : 
+        """
+        Safely aborts setup window creation when startup fails
+        """
+        self.running = False
 
+        # If somehow the laser is on
+        if self.laser is not None : 
+            try : 
+                self.laser.off()
+                self.laser.close()
+
+            except Exception : 
+                pass # Continue even if fail
+            
+            self.laser = None
+
+        # If camera exists
+        if self.cap is not None : 
+            self.cap.release()
+            self.cap = None
+
+        # Tell main GUI that setup is not open
+        if self.on_close is not None : 
+            # Run close callback
+            self.on_close()
+
+        # Check if window still exists
+        if self.window.winfo_exists() : 
+            self.window.destroy()
+        
 
     def close(self) : 
         """

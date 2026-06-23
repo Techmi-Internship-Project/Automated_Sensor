@@ -38,6 +38,8 @@ def run_experiment(
         output_root:
             Main folder where active experiment data is stored
     """
+    consecutive_capture_failtures = 0
+    max_consecutive_capture_failures = 3
 
     def send_status(**kwargs) : 
         """
@@ -108,6 +110,8 @@ def run_experiment(
                     # Run complete measurement sequence
                     laser_only = capture_measurement(cap, laser)
 
+                    consecutive_capture_failtures = 0 # Successful capture
+
                     is_final_capture = (next_capture_time + interval_seconds >= experiment_end_time)
 
 
@@ -140,6 +144,8 @@ def run_experiment(
                     error_text = str(error)
                     print(f"Capture failed: {error}")
 
+                    consecutive_capture_failtures += 1
+
                     if "ARUCO_NOT_FOUND" in error_text : 
                         send_status(
                             last_capture_result="ArUco markers missing",
@@ -149,10 +155,13 @@ def run_experiment(
                     else : 
                         send_status(last_capture_result="Failed", last_message=error_text)
 
+
+                    if consecutive_capture_failtures >= max_consecutive_capture_failures : 
+                        raise RuntimeError(f"Fatal cammera/capture failure: {error}")
                 # Schedule next capture from original timeline
                 next_capture_time += interval_seconds
             
-            time.sleep(0.1)
+            #time.sleep(0.1)
 
     except KeyboardInterrupt:
         print("\nExperiment manually stopped.")
@@ -165,6 +174,16 @@ def run_experiment(
             capture_count=capture_number,
             reason=finish_reason
         )
+
+        if laser is not None :  # Just in case failure occurs
+            try :
+                laser.off()
+
+            except RuntimeError : 
+                pass # Continue if laser cleanup fails
+
+        if cap is not None : 
+            cap.release()
 
     print(f"Experiment finished with {capture_number} saved images.")
     return run_folder

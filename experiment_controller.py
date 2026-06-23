@@ -31,7 +31,8 @@ class ExperimentController :
             "run_folder": None, # Store current run folder path
             "last_message": "Idle", # Most recent status message
             "alert_message": None, # For specific error handling
-            "alert_id" : 0 # For popup handling
+            "alert_id" : 0, # For popup handling
+            "run_completed_successfully": False # False by default until actually completes correctly
         }
         
 
@@ -62,7 +63,8 @@ class ExperimentController :
             run_folder=None,
             last_message="Starting experiment...",
             alert_message=None,
-            alert_id=0
+            alert_id=0,
+            run_completed_successfully = False
         )
 
         self.thread = threading.Thread(
@@ -85,23 +87,40 @@ class ExperimentController :
     
 
     def _experiment_worker(
-            self,
-            microorganism_type,
-            camera_index,
-            run_id,
-            duration_seconds,
-            interval_seconds,
-            output_root
-    ):
-        try : 
+        self,
+        microorganism_type,
+        camera_index,
+        run_id,
+        duration_seconds,
+        interval_seconds,
+        output_root
+):
+        """
+        Runs the experiment in a background thread.
+        """
+
+        # Track whether the run finished normally.
+        run_completed_successfully = False
+
+        # Try to run the full experiment.
+        try:
+
+            # Open the selected camera.
             self.cap = open_camera(camera_index)
 
-            if self.cap is None or not self.cap.isOpened() :
+            # Check if the camera failed to open.
+            if self.cap is None or not self.cap.isOpened():
+
+                # Stop the run because the camera is required.
                 raise RuntimeError("Could not open camera")
-            
+
+            # Create the laser relay object.
             self.laser = LaserRelay()
+
+            # Open the laser relay connection.
             self.laser.open()
 
+            # Run the actual experiment and store the completed run folder.
             self.last_run_folder = run_experiment(
                 cap=self.cap,
                 laser=self.laser,
@@ -114,31 +133,107 @@ class ExperimentController :
                 status_callback=self.update_status
             )
 
-        except RuntimeError as error : 
-            self.last_error = str(error)
-            print(f"Experiment failed: {error}")
-            self.update_status(state="error", last_message=str(error))
+            # Check if the stop button was not requested.
+            if not self.stop_event.is_set():
 
-        finally : 
-            if self.laser is not None : 
-                self.laser.close()
+                # Mark the run as completed successfully.
+                run_completed_successfully = True
+
+                # Update the GUI status as finished.
+                self.update_status(
+                    state="finished",
+                    last_message="Experiment finished.",
+                    last_error=None,
+                    run_completed_successfully=True
+                )
+
+            # Handle the case where the user stopped the run.
+            else:
+
+                # Mark the run as stopped rather than completed.
+                self.update_status(
+                    state="stopped",
+                    last_message="Experiment stopped by user.",
+                    last_error=None,
+                    run_completed_successfully=False
+                )
+
+        # Handle fatal experiment errors.
+        except RuntimeError as error:
+
+            # Store the error text.
+            self.last_error = str(error)
+
+            # Print the error in the terminal for debugging.
+            print(f"Experiment failed: {error}")
+
+            # Update the GUI status and trigger one alert popup.
+            self.update_status(
+                state="error",
+                last_error=str(error),
+                last_message=f"Experiment stopped because of an error: {error}",
+                run_completed_successfully=False,
+                alert_message=f"Experiment stopped because of an error:\n\n{error}"
+            )
+
+        # Always clean up hardware resources.
+        finally:
+
+            # Check if the laser relay exists.
+            if self.laser is not None:
+
+                # Try to turn the laser off before closing the relay.
+                try:
+
+                    # Turn the laser off for safety.
+                    self.laser.off()
+
+                # Ignore laser-off errors during cleanup.
+                except RuntimeError:
+
+                    # Continue cleanup even if laser off failed.
+                    pass
+
+                # Try to close the laser relay connection.
+                try:
+
+                    # Close the laser relay.
+                    self.laser.close()
+
+                # Ignore laser-close errors during cleanup.
+                except RuntimeError:
+
+                    # Continue cleanup even if laser close failed.
+                    pass
+
+                # Clear the laser object.
                 self.laser = None
 
-            if self.cap is not None : 
+            # Check if the camera exists.
+            if self.cap is not None:
+
+                # Release the camera.
                 self.cap.release()
+
+                # Clear the camera object.
                 self.cap = None
 
-            if self.last_error is None:
-                self.update_status(state="finished", last_message="Experiment finished.")
-
+            # Mark the controller as not running.
             self.is_running = False
 
-
     def stop_experiment(self) : 
+        """
+        Requests experiment thread to stop"""
         if not self.is_running : 
             return
         
         self.stop_event.set()
+
+        self.update_status(
+            state="stopping",
+            last_message="Stop requested...",
+            run_completed_successfully = False
+        )
 
 
     def thread_is_alive(self) : 

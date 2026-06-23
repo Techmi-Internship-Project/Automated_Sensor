@@ -420,9 +420,16 @@ class SensorGUI :
         # Update states before opening window to avoid user doing silly stuff
         self.update_control_states()
 
-        # Create the window
-        CameraSetupWindow(parent=self.root, camera_index=camera_index, on_close=self.on_camera_setup_close)
+        try : 
+            # Create the window
+            CameraSetupWindow(parent=self.root, camera_index=camera_index, on_close=self.on_camera_setup_close)
 
+        except Exception as error : 
+            self.camera_setup_open = False
+            self.update_control_states()
+            messagebox.showerror("Camera Setup Error", str(error))
+
+            
     def on_camera_setup_close(self) : 
         """
         Callback for when the camera setup window closes
@@ -533,7 +540,7 @@ class SensorGUI :
         run_folder = status.get("run_folder", None)
         last_saved_image = status.get("last_saved_image", None)
         last_message = status.get("last_message", "Idle")
-
+        run_completed_successfully = status.get("run_completed_successfully", False)
 
         capture_error = status.get("last_error", None)
         last_capture_result = status.get("last_capture_result", "None")
@@ -562,7 +569,7 @@ class SensorGUI :
             self.error.set(f"Error: {self.controller.last_error}")
 
         # Check if experiment is done and has a run folder to move
-        if not self.controller.is_running and self.controller.last_run_folder is not None : 
+        if not self.controller.is_running and self.controller.last_run_folder is not None and run_completed_successfully: 
             
             completed_run_folder = self.controller.last_run_folder
             destination_folder = build_training_destination(completed_run_folder, self.training_folder)
