@@ -186,6 +186,10 @@ class SensorGUI :
         error_label = tk.Label(self.root, textvariable=self.error)
         error_label.pack(pady=5)
 
+        # Message label
+        last_message_label = tk.Label(self.root, textvariable=self.last_message)
+        last_message_label.pack(pady=3)
+
         # Elasped time
         elapsed_label = tk.Label(self.root, textvariable=self.elapsed)
         elapsed_label.pack(pady=3)
@@ -429,7 +433,7 @@ class SensorGUI :
             self.update_control_states()
             messagebox.showerror("Camera Setup Error", str(error))
 
-            
+
     def on_camera_setup_close(self) : 
         """
         Callback for when the camera setup window closes
@@ -621,8 +625,8 @@ class SensorGUI :
 
         self.last_message.set(f"Message: {last_message}")
 
-        # Schedule to run again after 500ms
-        self.root.after(500, self.update_status_loop)
+        # Schedule to run again after 100ms
+        self.root.after(100, self.update_status_loop)
 
 
     def update_progress_display(self, elapsed_seconds, duration_seconds) : 

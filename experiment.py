@@ -111,7 +111,7 @@ def run_experiment(
                 
                 try:
                     # Run complete measurement sequence
-                    laser_only = capture_measurement(cap, laser)
+                    laser_only = capture_measurement(cap, laser, status_callback=send_status)
 
                     consecutive_capture_failures = 0 # Successful capture
 
@@ -136,7 +136,7 @@ def run_experiment(
                     send_status(
                         capture_count=capture_number + 1,
                         last_saved_image=str(filepath),
-                        last_message=f"Saved {filepath.name}",
+                        last_message=f"Saved image",
                         last_error=None,
                         last_capture_result="Success"
                     )
@@ -157,7 +157,7 @@ def run_experiment(
                         send_status(
                             last_capture_result="ArUco markers missing",
                             last_error=error_text,
-                            alert_message="Could not detect all four ArUco markers.\n\n"
+                            alert_message="Could not detect all four ArUco markers.\n\n",
                         )      
                     else : 
                         send_status(
@@ -173,6 +173,7 @@ def run_experiment(
                 # Schedule next capture from original timeline
                 next_capture_time += interval_seconds
             
+            send_status(last_message="Waiting for next capture...")
             time.sleep(0.1)
 
     # Fatal capture, saving, camera, or relay failure

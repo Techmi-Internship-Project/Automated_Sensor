@@ -58,7 +58,7 @@ def find_roi(cap, max_attempts=5):
     return None
 
 
-def capture_measurement(cap, laser):
+def capture_measurement(cap, laser, status_callback=None):
     """
     Capture one complete laser measurement.
 
@@ -85,8 +85,16 @@ def capture_measurement(cap, laser):
             Raised if marker detection, camera capture, or alignment fails.
     """
 
+    def send_status(**kwargs) : 
+        """
+        Helper function for sending measurement status updates
+        """
+        if status_callback is not None : 
+            status_callback(**kwargs)
+
     # Find the target area's current position.
     roi_corners = find_roi(cap)
+    send_status(last_message="Finding ROI...")
 
     # Stop this measurement if all four markers were not detected.
     if roi_corners is None:
@@ -94,6 +102,8 @@ def capture_measurement(cap, laser):
 
     # Use low exposure for both measurement images.
     set_low_exposure(cap)
+    send_status(last_message="Setting low exposure...")
+
 
     try : 
         # Turn the laser off before capturing the ambient/background image.
@@ -103,19 +113,27 @@ def capture_measurement(cap, laser):
 
     # Capture the image containing only ambient light and background noise.
     background = grab_frame(cap)
+    send_status(last_message="Capturing laser-off background...")
+
 
     # Try to capture the laser on image
     try : 
         try : # Try to turn the laser on
             laser.on()
+            send_status(last_message="Turning laser on...")
+
         except Exception as error : 
             raise RuntimeError(f"RELAY_FAILURE: Could not turn laser on for measurement: {error}")
         
         # Capture the image containing ambient light plus the laser signal.
         laser_image = grab_frame(cap)
+        send_status(last_message="Capturing laser image...")
+
     finally : 
         try : # Try to turn laser off
             laser.off()
+            send_status(last_message="Turning laser off...")
+
         except Exception as error : 
             raise RuntimeError(f"RELAY_FAILURE: Could not turn laser off after measurement: {error}")
         
@@ -130,6 +148,8 @@ def capture_measurement(cap, laser):
     # Perspective-correct and crop the background image
     # using the detected ArUco marker coordinates.
     aligned_background = align_roi(background, roi_corners)
+    send_status(last_message="Aligning ROI...")
+
 
     # Perspective-correct and crop the laser image
     # using the same ROI coordinates.
@@ -144,6 +164,8 @@ def capture_measurement(cap, laser):
     # Subtract the background image from the laser image.
     # This should remove most ambient light and leave the laser signal.
     laser_only = subtract_background(aligned_laser, aligned_background)
+    send_status(last_message="Subtracting background...")
+
 
     # Return the processed image to main.py.
     return laser_only
