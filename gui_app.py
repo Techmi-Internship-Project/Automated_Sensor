@@ -32,7 +32,7 @@ class SensorGUI :
     def __init__(self, current_folder, training_folder):
         self.root = tk.Tk() # Create main Tkinter window
         self.root.title("Bioreactor Sensor")
-        self.root.geometry("600x500")
+        self.root.geometry("600x550")
 
         self.controller = ExperimentController()
 
@@ -78,11 +78,13 @@ class SensorGUI :
 
         self.camera_setup_open = False
 
-        self.last_summary_run_folder = None # To prevent repeated run summary popups
+        self.last_summary_destination_folder = None # To prevent repeated run summary popups
 
         self.build_widgets()
         self.update_status_loop() # Start repeated GUI status updater
 
+        # Use a custom close handler
+        self.root.protocol("WM_DELETE_WINDOW", self.confirm_exit)
     
     def build_widgets(self) : 
         """
@@ -479,10 +481,47 @@ class SensorGUI :
 
         
     def stop_experiment(self) : 
-        # Tell controller to stop experiment
+        """
+        Get user confirmation of exit, then stop the active experiment
+        """
+
+        # Check if running
+        if not self.controller.is_running : 
+            return # Nothing to stop
+        
+        confirm = messagebox.askyesno("Confirm Stop", "Stop the current experiment?\n\nThis run will be interrupted.")
+
+        if not confirm : 
+            return # User does not want to stop
+        
         self.controller.stop_experiment()
         self.stop_requested = True
         self.status.set("Status: Stop requested")
+
+
+    def confirm_exit(self) : 
+        """
+        Custom close handler, asks for user confirmation
+        """
+
+        if not self.controller.is_running : 
+            self.root.destroy() # Idle, no confirmation needed
+            return 
+        
+        confirm = messagebox.askyesno("Experiment Running", "An experiment is currently running.\n\nStop the experiment and exit?")
+
+        if not confirm : 
+            # User does not want to exit
+            return
+        
+        self.controller.stop_experiment()
+
+        self.stop_requested = True
+        self.status.set("Status: Stop requested")
+        self.root.after(500, self.root.destroy) # Wait briefly before closing for controller cleanup
+        
+        
+    
 
 
     def update_status_loop(self) : 
@@ -541,10 +580,10 @@ class SensorGUI :
             if move_success and destination_folder is not None : 
                 destination_text = str(destination_folder)
 
-                if self.last_summary_run_folder != destination_text : 
+                if self.last_summary_destination_folder != destination_text : 
                     # Store so summary does not repeat
-                    self.last_summary_run_folder = destination_text
-                # Show the popup
+                    self.last_summary_destination_folder = destination_text
+                    # Show the popup
                     self.show_run_completed_summary(
                         run_folder=run_folder,
                         capture_count=capture_count,
@@ -677,5 +716,8 @@ class SensorGUI :
 
     def run(self) : 
         self.root.mainloop()
+
+
+
 
     
