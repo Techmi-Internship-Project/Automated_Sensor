@@ -231,20 +231,20 @@ class SensorGUI :
         preset_label = tk.Label(preset_frame, text="Duration: ", width=14, anchor="w")
         preset_label.pack(side=tk.LEFT)
 
-        preset_6h_button = tk.Button(preset_frame, text="6h", command=lambda: self.set_duration_preset(hours=6))
-        preset_6h_button.pack(side=tk.LEFT, padx=2)
+        self.preset_6h_button = tk.Button(preset_frame, text="6h", command=lambda: self.set_duration_preset(hours=6))
+        self.preset_6h_button.pack(side=tk.LEFT, padx=2)
 
-        preset_12h_button = tk.Button(preset_frame, text="12h", command=lambda: self.set_duration_preset(hours=12))
-        preset_12h_button.pack(side=tk.LEFT, padx=2)
+        self.preset_12h_button = tk.Button(preset_frame, text="12h", command=lambda: self.set_duration_preset(hours=12))
+        self.preset_12h_button.pack(side=tk.LEFT, padx=2)
         
-        preset_24h_button = tk.Button(preset_frame, text="24h", command=lambda: self.set_duration_preset(days=1))
-        preset_24h_button.pack(side=tk.LEFT, padx=2)
+        self.preset_24h_button = tk.Button(preset_frame, text="24h", command=lambda: self.set_duration_preset(days=1))
+        self.preset_24h_button.pack(side=tk.LEFT, padx=2)
 
-        preset_48h_button = tk.Button(preset_frame, text="48h", command=lambda: self.set_duration_preset(days=2))
-        preset_48h_button.pack(side=tk.LEFT, padx=2)
+        self.preset_48h_button = tk.Button(preset_frame, text="48h", command=lambda: self.set_duration_preset(days=2))
+        self.preset_48h_button.pack(side=tk.LEFT, padx=2)
 
-        preset_72h_button = tk.Button(preset_frame, text="72h", command=lambda: self.set_duration_preset(days=3))
-        preset_72h_button.pack(side=tk.LEFT, padx=2)
+        self.preset_72h_button = tk.Button(preset_frame, text="72h", command=lambda: self.set_duration_preset(days=3))
+        self.preset_72h_button.pack(side=tk.LEFT, padx=2)
 
         # Estimation
         estimate_frame = tk.Frame(timing_frame)
@@ -378,7 +378,7 @@ class SensorGUI :
         
         interval_seconds = hours * 3600 + mins * 60
 
-        if interval_seconds < 0 :
+        if interval_seconds <= 0 :
             raise ValueError("Interval must be greater than zero.")
         
         return interval_seconds
@@ -856,6 +856,11 @@ class SensorGUI :
             self.interval_hours_entry.config(state=tk.DISABLED)
             self.interval_minutes_entry.config(state=tk.DISABLED)
             self.camera_setup_button.config(state=tk.DISABLED)
+            self.preset_6h_button.config(state=tk.DISABLED)
+            self.preset_12h_button.config(state=tk.DISABLED)
+            self.preset_24h_button.config(state=tk.DISABLED)
+            self.preset_48h_button.config(state=tk.DISABLED)
+            self.preset_72h_button.config(state=tk.DISABLED)
 
 
         elif self.controller.is_running and self.stop_requested : 
@@ -871,6 +876,11 @@ class SensorGUI :
             self.interval_hours_entry.config(state=tk.DISABLED)
             self.interval_minutes_entry.config(state=tk.DISABLED)
             self.camera_setup_button.config(state=tk.DISABLED)
+            self.preset_6h_button.config(state=tk.DISABLED)
+            self.preset_12h_button.config(state=tk.DISABLED)
+            self.preset_24h_button.config(state=tk.DISABLED)
+            self.preset_48h_button.config(state=tk.DISABLED)
+            self.preset_72h_button.config(state=tk.DISABLED)
 
         else : 
             self.stop_requested = False
@@ -888,6 +898,11 @@ class SensorGUI :
             self.interval_hours_entry.config(state=tk.NORMAL)
             self.interval_minutes_entry.config(state=tk.NORMAL)
             self.camera_setup_button.config(state=tk.NORMAL)
+            self.preset_6h_button.config(state=tk.NORMAL)
+            self.preset_12h_button.config(state=tk.NORMAL)
+            self.preset_24h_button.config(state=tk.NORMAL)
+            self.preset_48h_button.config(state=tk.NORMAL)
+            self.preset_72h_button.config(state=tk.NORMAL)
             self.update_recovery_button_state()
 
         if self.camera_setup_open:
@@ -903,6 +918,12 @@ class SensorGUI :
             self.interval_hours_entry.config(state=tk.DISABLED)
             self.interval_minutes_entry.config(state=tk.DISABLED)
             self.camera_setup_button.config(state=tk.DISABLED)
+            self.preset_6h_button.config(state=tk.DISABLED)
+            self.preset_12h_button.config(state=tk.DISABLED)
+            self.preset_24h_button.config(state=tk.DISABLED)
+            self.preset_48h_button.config(state=tk.DISABLED)
+            self.preset_72h_button.config(state=tk.DISABLED)
+
 
     def show_run_completed_summary(self, run_folder, capture_count, elapsed_seconds) : 
         """
