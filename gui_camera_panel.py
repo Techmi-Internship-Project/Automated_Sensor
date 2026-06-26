@@ -29,7 +29,8 @@ from camera_settings import (
     save_camera_settings
 )
 
-
+PREVIEW_WIDTH = 640
+PREVIEW_HEIGHT = 360
 class CameraPanelMixin:
     """
     GUI section mixin split out of the original SensorGUI class.
@@ -73,35 +74,24 @@ class CameraPanelMixin:
             self._laser_btn.pack(side=tk.RIGHT)
 
             # Canvas
-            self._PREV_W, self._PREV_H = 720, 405
+            self._PREV_W, self._PREV_H = PREVIEW_WIDTH, PREVIEW_HEIGHT
+
+            preview_holder = tk.Frame(c, bg=CARD_BG)
+            preview_holder.grid(row=1, column=0, pady=(0,4))
 
             # Preview canvas
             self._preview_canvas = tk.Canvas(
-                c, width=self._PREV_W, height=self._PREV_H,
-                bg="#0a0f1e", highlightthickness=0
+                preview_holder, 
+                width=self._PREV_W,
+                height=self._PREV_H,
+                bg="#0a0f1e",
+                highlightthickness=0,
+                bd=0
             )
 
-            self._preview_canvas.grid(row=1, column=0, sticky="ew")
-            self._preview_resize_pending = False
-
-
-            def _resize_preview_canvas(event) : 
-                """
-                Keeps preview canvas proportional without letting it grow too tall
-                """
-
-                if self._preview_resize_pending : 
-                    return # Do nothing if resize already waiting to ruin
-            
-                self._preview_resize_pending = True
-
-                # Schedule resize after Tk finishes current layout pass.
-                self.root.after_idle(lambda: self._apply_preview_canvas_size(event.width))
-            
-           
-            self._preview_canvas.bind("<Configure>", _resize_preview_canvas)
+            self._preview_canvas.pack(side=tk.LEFT)
             self._draw_preview_placeholder()
-
+            
             # Status bar
             sb = tk.Frame(c, bg=CARD_BG)
             sb.grid(row=2, column=0, sticky="ew", pady=(4, 0))
@@ -114,46 +104,11 @@ class CameraPanelMixin:
                      bg=CARD_BG, fg=TEXT_MUTED,
                      font=(FONT_BRAND, 9)).pack(side=tk.RIGHT)
 
-    def _apply_preview_canvas_size(self, available_width):
-        """
-        Applies a safe 16:9 preview size based on the available panel width.
-        """
-
-        # Allow future resize events to run.
-        self._preview_resize_pending = False
-
-        # Keep some margin inside the card.
-        target_width = max(480, available_width)
-
-        # Cap the preview width so it does not dominate the dashboard.
-        target_width = min(target_width, 760)
-
-        # Use a 16:9 aspect ratio for the camera preview.
-        target_height = int(target_width * 9 / 16)
-
-        # Cap the height so lower panels remain visible.
-        target_height = min(target_height, 410)
-
-        # Avoid useless reconfiguration if size did not actually change.
-        if target_width == self._PREV_W and target_height == self._PREV_H:
-            return
-
-        # Store the new preview dimensions.
-        self._PREV_W = target_width
-        self._PREV_H = target_height
-
-        # Apply the new canvas size.
-        self._preview_canvas.configure(
-            width=self._PREV_W,
-            height=self._PREV_H
-        )
-
-        # Redraw placeholder only when preview is off.
-        if not self._preview_running:
-            self._draw_preview_placeholder()
-
-
+    
     def _draw_preview_placeholder(self):
+            """
+            Draws TECHMI logo placeholder when camera preview is off
+            """
             cv = self._preview_canvas
             cv.delete("all")
             cv.configure(bg="#0a0f1e")
@@ -161,17 +116,27 @@ class CameraPanelMixin:
             if self._logo_photo is None:
                 try:
                     img = Image.open("logo_azul.png").convert("RGBA")
-                    scale = (self._PREV_W * 0.38) / img.width
-                    nw = max(1, int(img.width * scale))
-                    nh = max(1, int(img.height * scale))
-                    img = img.resize((nw, nh), Image.LANCZOS)
-                    alpha = img.getchannel("A").point(lambda p: int(p * 0.16))
-                    img.putalpha(alpha)
-                    self._logo_photo = ImageTk.PhotoImage(img)
+                    # Scale logo 
+                    target_width = int(self._PREV_W * 0.6)
+                    scale = target_width / img.width
+                    target_height = max(1, int(img.height * scale))
+
+                    # Resize smoothly
+                    logo_image = img.resize((target_width, target_height), Image.LANCZOS)
+                
+                    # Make subtle
+                    alpha = logo_image.getchannel("A").point(lambda p: int(p * 0.24))
+                    logo_image.putalpha(alpha)
+
+                    # Store reference so Tkinter does not garbage collect it
+                    self._logo_photo = ImageTk.PhotoImage(logo_image)
+
                 except Exception:
                     self._logo_photo = None
 
             cx, cy = self._PREV_W // 2, self._PREV_H // 2
+
+            # Draw if available
             if self._logo_photo:
                 cv.create_image(cx, cy - 20,
                                 image=self._logo_photo, anchor="center")
@@ -181,7 +146,8 @@ class CameraPanelMixin:
 
             cv.create_text(cx, cy + 60,
                            text="Press ▶ Preview to start camera feed",
-                           fill="#2d3f5e", font=(FONT_BRAND, 11))
+                           fill="#95A5C1", font=(FONT_BRAND, 11))
+
 
     def _toggle_preview(self):
             if not self._preview_running:
@@ -275,29 +241,64 @@ class CameraPanelMixin:
             else:
                 self._roi_var.set("ROI: overlay off")
 
+            # Read camera frame size.
             h, w = display.shape[:2]
-            canvas_w = max(320, self._preview_canvas.winfo_width())
-            canvas_h = max(220, self._preview_canvas.winfo_height())
 
-            scale = min(canvas_w / w, canvas_h / h)
-            nw, nh = int(w * scale), int(h * scale)
-            # Use downscaling when shrinking camera image
+            # Use fixed preview canvas size.
+            canvas_w = self._PREV_W
+            canvas_h = self._PREV_H
+
+            # Scale image to cover the entire canvas.
+            # This avoids black bars by cropping excess image instead of letterboxing.
+            scale = max(canvas_w / w, canvas_h / h)
+
+            # Calculate resized dimensions.
+            nw = max(1, int(w * scale))
+            nh = max(1, int(h * scale))
+
+            # Use good interpolation depending on whether the image is shrinking or growing.
             interpolation = cv.INTER_AREA if scale < 1.0 else cv.INTER_LINEAR
-            resized = cv.resize(display, (nw, nh), interpolation=interpolation)
-            rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB)
+
+            # Resize camera image.
+            resized = cv.resize(
+                display,
+                (nw, nh),
+                interpolation=interpolation
+            )
+
+            # Center-crop resized image to exactly match canvas size.
+            x_start = max(0, (nw - canvas_w) // 2)
+            y_start = max(0, (nh - canvas_h) // 2)
+            cropped = resized[
+                y_start:y_start + canvas_h,
+                x_start:x_start + canvas_w
+            ]
+
+            # Convert OpenCV BGR image to RGB for Tkinter.
+            rgb = cv.cvtColor(cropped, cv.COLOR_BGR2RGB)
+
+            # Convert NumPy image to Pillow image.
             pil = Image.fromarray(rgb)
+
+            # Convert Pillow image to Tkinter image.
             tkimg = ImageTk.PhotoImage(pil)
 
-            xoff = (canvas_w - nw) // 2
-            yoff = (canvas_h - nh) // 2
+            # Clear old frame.
             self._preview_canvas.delete("all")
-            self._preview_canvas.configure(bg="#000000")
-            self._preview_canvas.create_image(xoff, yoff, image=tkimg,
-                                              anchor="nw")
-            self._preview_tk_img = tkimg
 
-            self._preview_after_id = self._preview_canvas.after(
-                33, self._preview_frame_loop)
+            # Draw image at top-left because it already matches the canvas size.
+            self._preview_canvas.create_image(
+                0,
+                0,
+                image=tkimg,
+                anchor="nw"
+            )
+
+            # Store reference so Tkinter does not garbage collect the frame.
+            self._preview_tk_img = tkimg
+            
+
+            self._preview_after_id = self._preview_canvas.after(33, self._preview_frame_loop)
 
     def _toggle_overlay(self):
             self._show_overlay = not self._show_overlay
