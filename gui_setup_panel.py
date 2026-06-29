@@ -25,9 +25,11 @@ class SetupPanelMixin:
     GUI section mixin split out of the original SensorGUI class.
     """
 
-    def _build_setup_panel(self, parent):
+    def _build_setup_panel(self, parent, row=0):
             card, c = _card(parent, "SETUP", "⚙")
-            card.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+            parent.grid_rowconfigure(row, weight=1)
+            parent.grid_columnconfigure(0, weight=1)
+            card.grid(row=row, column=0, sticky="nsew", pady=(0, 6))
             c.grid_columnconfigure(0, weight=1)
             c.grid_columnconfigure(1, weight=0)
 
@@ -52,7 +54,7 @@ class SetupPanelMixin:
                 self.organism_var_frame,
                 textvariable=self.organism,
                 bg="white", fg=TEXT_DARK,
-                font=(FONT_BRAND, 11),
+                font=(FONT_BRAND, 9),
                 anchor="w", padx=10, pady=6
             )
             self._org_display.grid(row=0, column=0, sticky="ew")
@@ -60,7 +62,7 @@ class SetupPanelMixin:
             self._org_arrow = tk.Label(
                 self.organism_var_frame, text="▾",
                 bg="white", fg=TEXT_MUTED,
-                font=(FONT_BRAND, 13), padx=8
+                font=(FONT_BRAND, 9), padx=8
             )
             self._org_arrow.grid(row=0, column=1)
 
@@ -71,12 +73,12 @@ class SetupPanelMixin:
             self.create_organism_btn = _btn(c, "+  Create New Organism",
                                             self.create_new_organism)
             self.create_organism_btn.grid(row=2, column=0, columnspan=2,
-                                          sticky="ew", pady=(0, 12))
+                                          sticky="ew", pady=(0, 6))
             self._idle_only_widgets.append(self.create_organism_btn)
 
             # Camera
             _section_label(c, "Camera").grid(row=3, column=0, columnspan=2,
-                                             sticky="w", pady=(0, 4))
+                                             sticky="w", pady=(0, 2))
 
             self.load_available_cameras()
             cam_opts = list(self.camera_label_to_index.keys())
@@ -92,11 +94,11 @@ class SetupPanelMixin:
             cam_fr.grid_columnconfigure(0, weight=1)
             self._cam_display = tk.Label(cam_fr, textvariable=self.selected_camera,
                                          bg="white", fg=TEXT_DARK,
-                                         font=(FONT_BRAND, 11),
+                                         font=(FONT_BRAND, 9),
                                          anchor="w", padx=10, pady=6)
             self._cam_display.grid(row=0, column=0, sticky="ew")
             tk.Label(cam_fr, text="▾", bg="white", fg=TEXT_MUTED,
-                     font=(FONT_BRAND, 13), padx=8).grid(row=0, column=1)
+                     font=(FONT_BRAND, 9), padx=8).grid(row=0, column=1)
             for w in (self._cam_display, cam_fr):
                 w.bind("<Button-1>", self._show_camera_menu)
 
@@ -109,14 +111,14 @@ class SetupPanelMixin:
             self.recovery_button = _btn(c, "▭  Handle Old Runs",
                                         self.open_recovery_window)
             self.recovery_button.grid(row=5, column=0, columnspan=2,
-                                      sticky="ew", pady=(4, 0))
+                                      sticky="ew", pady=(0, 0))
             self._idle_only_widgets.append(self.recovery_button)
 
     def _show_organism_menu(self, event=None):
             if self.controller.is_running:
                 return
             menu = tk.Menu(self.root, tearoff=0,
-                           font=(FONT_BRAND, 11),
+                           font=(FONT_BRAND, 9),
                            bg="white", fg=TEXT_DARK,
                            activebackground=TECHMI_BLUE,
                            activeforeground="white",
@@ -142,7 +144,7 @@ class SetupPanelMixin:
             if not opts:
                 return
             menu = tk.Menu(self.root, tearoff=0,
-                           font=(FONT_BRAND, 11), bg="white", fg=TEXT_DARK,
+                           font=(FONT_BRAND, 9), bg="white", fg=TEXT_DARK,
                            activebackground=TECHMI_BLUE,
                            activeforeground="white",
                            relief="flat", bd=1)

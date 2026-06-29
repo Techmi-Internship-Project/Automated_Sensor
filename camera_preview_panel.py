@@ -40,11 +40,11 @@ class CameraPreviewPanel:
 
     Public API
     ----------
-    start_preview(camera_index)   – open camera and begin frame loop
-    stop_preview()                – release camera, show logo placeholder
-    set_laser(relay: LaserRelay)  – attach an already-opened LaserRelay
+    start_preview(camera_index)    open camera and begin frame loop
+    stop_preview()                 release camera, show logo placeholder
+    set_laser(relay: LaserRelay)   attach an already-opened LaserRelay
     get_laser_state() -> bool
-    log_callback                  – assign a callable(message, category) to
+    log_callback                   assign a callable(message, category) to
                                     route panel messages to the main log
     """
 

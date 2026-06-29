@@ -29,16 +29,18 @@ from camera_settings import (
     save_camera_settings
 )
 
-PREVIEW_WIDTH = 640
-PREVIEW_HEIGHT = 360
+PREVIEW_WIDTH = 460
+PREVIEW_HEIGHT = 259
 class CameraPanelMixin:
     """
     GUI section mixin split out of the original SensorGUI class.
     """
 
-    def _build_camera_preview_panel(self, parent):
+    def _build_camera_preview_panel(self, parent, row=0):
             card, c = _card(parent, "CAMERA PREVIEW", "▣")
-            card.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+            parent.grid_rowconfigure(row, weight=1)
+            parent.grid_columnconfigure(0, weight=1)
+            card.grid(row=row, column=0, sticky="nsew", pady=(0, 6))
             c.grid_columnconfigure(0, weight=1)
 
             # Control bar
@@ -51,7 +53,7 @@ class CameraPanelMixin:
             )
             self._preview_toggle_btn.configure(
                 bg="#eef2ff", fg=TECHMI_BLUE,
-                font=(FONT_BRAND, 10, "bold")
+                font=(FONT_BRAND, 8, "bold")
             )
             self._preview_toggle_btn.pack(side=tk.LEFT)
 
@@ -68,7 +70,7 @@ class CameraPanelMixin:
                 bg=NAVY_2, fg="#9ca3af",
                 activebackground=NAVY, activeforeground="white",
                 relief="flat", bd=0,
-                font=(FONT_BRAND, 10, "bold"),
+                font=(FONT_BRAND, 8, "bold"),
                 padx=12, pady=4, cursor="hand2"
             )
             self._laser_btn.pack(side=tk.RIGHT)
@@ -99,10 +101,10 @@ class CameraPanelMixin:
             self._marker_var  = tk.StringVar(value="Markers: —")
             tk.Label(sb, textvariable=self._roi_var,
                      bg=CARD_BG, fg=TEXT_MUTED,
-                     font=(FONT_BRAND, 9)).pack(side=tk.LEFT)
+                     font=(FONT_BRAND, 8)).pack(side=tk.LEFT)
             tk.Label(sb, textvariable=self._marker_var,
                      bg=CARD_BG, fg=TEXT_MUTED,
-                     font=(FONT_BRAND, 9)).pack(side=tk.RIGHT)
+                     font=(FONT_BRAND, 8)).pack(side=tk.RIGHT)
 
     
     def _draw_preview_placeholder(self):
@@ -340,20 +342,21 @@ class CameraPanelMixin:
                 self._laser_on = False
                 messagebox.showerror("Laser Error", str(e))
 
-    def _build_camera_settings_panel(self, parent):
+    def _build_camera_settings_panel(self, parent, row=0):
             card, c = _card(parent, "CAMERA SETTINGS", "☷")
-            card.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+            parent.grid_rowconfigure(row, weight=1)
+            parent.grid_columnconfigure(0, weight=1)
+            card.grid(row=row, column=0, sticky="nsew", pady=(0, 6))
             c.grid_columnconfigure(0, weight=1)
             c.grid_columnconfigure(1, weight=0)
 
             # Warning
             tk.Label(
                 c,
-                text="⚠  Autofocus, Auto Exposure & Auto White Balance must "
-                     "be disabled manually on the camera.",
+                text="⚠  Disable camera auto settings manually before running",
                 fg=WARNING, bg=CARD_BG,
-                font=(FONT_BRAND, 9, "bold"),
-                wraplength=520, anchor="w", justify="left"
+                font=(FONT_BRAND, 8, "bold"),
+                wraplength=500, anchor="w", justify="left"
             ).grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
 
             # Exposure profile buttons
@@ -367,7 +370,7 @@ class CameraPanelMixin:
                 pf, text="Normal", relief="flat", bd=0,
                 bg=TECHMI_BLUE, fg="white",
                 activebackground=TECHMI_BLUE, activeforeground="white",
-                font=(FONT_BRAND, 11, "bold"),
+                font=(FONT_BRAND, 9, "bold"),
                 padx=14, pady=5, cursor="hand2",
                 command=lambda: self._switch_cam_profile("normal")
             )
@@ -377,7 +380,7 @@ class CameraPanelMixin:
                 pf, text="Low", relief="flat", bd=0,
                 bg=CARD_BG, fg=TEXT_MUTED,
                 activebackground=TECHMI_BLUE, activeforeground="white",
-                font=(FONT_BRAND, 11),
+                font=(FONT_BRAND, 9),
                 padx=14, pady=5, cursor="hand2",
                 highlightthickness=1, highlightbackground=CARD_BORDER,
                 command=lambda: self._switch_cam_profile("low")
@@ -434,7 +437,7 @@ class CameraPanelMixin:
             self._cam_status_var = tk.StringVar(value="")
             tk.Label(c, textvariable=self._cam_status_var,
                      fg=SUCCESS, bg=CARD_BG,
-                     font=(FONT_BRAND, 9)).grid(
+                     font=(FONT_BRAND, 8)).grid(
                 row=8, column=0, sticky="w", pady=(4, 0))
 
     def _switch_cam_profile(self, name: str):
@@ -442,12 +445,12 @@ class CameraPanelMixin:
             self._norm_btn.configure(
                 bg=TECHMI_BLUE if name == "normal" else CARD_BG,
                 fg="white" if name == "normal" else TEXT_MUTED,
-                font=(FONT_BRAND, 11, "bold" if name == "normal" else "normal")
+                font=(FONT_BRAND, 9, "bold" if name == "normal" else "normal")
             )
             self._low_btn.configure(
                 bg=TECHMI_BLUE if name == "low" else CARD_BG,
                 fg="white" if name == "low" else TEXT_MUTED,
-                font=(FONT_BRAND, 11, "bold" if name == "low" else "normal")
+                font=(FONT_BRAND, 9, "bold" if name == "low" else "normal")
             )
             self._load_camera_profile_into_ui(name)
             self._apply_cam_settings_to_preview()

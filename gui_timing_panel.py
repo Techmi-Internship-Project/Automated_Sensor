@@ -24,9 +24,12 @@ class TimingPanelMixin:
     GUI section mixin split out of the original SensorGUI class.
     """
 
-    def _build_timing_panel(self, parent):
+    def _build_timing_panel(self, parent, row=0):
             card, c = _card(parent, "EXPERIMENT TIMING", "◷")
-            card.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+            parent.grid_rowconfigure(0, weight=1)
+            parent.grid_columnconfigure(0, weight=1)
+            # Row 1 of the left dashboard column
+            card.grid(row=0, column=0, sticky="nsew", pady=(0, 6))
             c.grid_columnconfigure((0, 1, 2), weight=1)
 
             # Duration
@@ -43,7 +46,7 @@ class TimingPanelMixin:
             for lbl, col in [("Days", 0), ("Hours", 1), ("Minutes", 2)]:
                 tk.Label(c, text=lbl, fg=TEXT_MUTED, bg=CARD_BG,
                          font=(FONT_BRAND, 9)).grid(
-                    row=2, column=col, pady=(2, 10))
+                    row=2, column=col, pady=(1, 5))
 
             self._idle_only_widgets += [self.dur_days_e, self.dur_hrs_e,
                                         self.dur_min_e]
@@ -60,16 +63,16 @@ class TimingPanelMixin:
             for lbl, col in [("Hours", 0), ("Minutes", 1)]:
                 tk.Label(c, text=lbl, fg=TEXT_MUTED, bg=CARD_BG,
                          font=(FONT_BRAND, 9)).grid(
-                    row=5, column=col, pady=(2, 10))
+                    row=5, column=col, pady=(1, 5))
 
             self._idle_only_widgets += [self.int_hrs_e, self.int_min_e]
 
             # Quick presets
             _section_label(c, "Quick Presets").grid(
-                row=6, column=0, columnspan=3, sticky="w", pady=(0, 4))
+                row=6, column=0, columnspan=3, sticky="w", pady=(0, 2))
 
             pf = tk.Frame(c, bg=CARD_BG)
-            pf.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+            pf.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(0, 2))
             pf.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
 
             self._preset_btns = []
@@ -83,29 +86,15 @@ class TimingPanelMixin:
                     pf, text=label, relief="flat", bd=0, cursor="hand2",
                     bg=CARD_BG, fg=TEXT_MUTED,
                     activebackground=TECHMI_BLUE, activeforeground="white",
-                    font=(FONT_BRAND, 11),
-                    padx=6, pady=5,
+                    font=(FONT_BRAND, 9),
+                    padx=6, pady=2,
                     command=lambda kw=kwargs: self.set_duration_preset(**kw)
                 )
                 b.grid(row=0, column=i, sticky="ew", padx=2)
                 self._preset_btns.append(b)
                 self._idle_only_widgets.append(b)
 
-            # Estimates
-            ef = tk.Frame(c, bg="#f8fafc",
-                          highlightthickness=1, highlightbackground=CARD_BORDER)
-            ef.grid(row=8, column=0, columnspan=3, sticky="ew")
-            ef.grid_columnconfigure(0, weight=1)
-            for row_i, var in enumerate([self.estimated_duration_text,
-                                          self.estimated_capture_count,
-                                          self.estimated_finish_text]):
-                tk.Label(ef, textvariable=var, fg=TEXT_DARK, bg="#f8fafc",
-                         font=(FONT_BRAND, 10), anchor="w").grid(
-                    row=row_i, column=0, sticky="ew",
-                    padx=10, pady=(6 if row_i == 0 else 1, 6 if row_i == 2 else 1))
-
-            self._active_preset_btn = None
-
+            
     def _highlight_preset(self, btn):
             for b in self._preset_btns:
                 b.configure(bg=CARD_BG, fg=TEXT_MUTED)

@@ -152,9 +152,9 @@ def _btn(parent, text, cmd, kind="secondary", h=32, w=None, **kw):
         relief="flat",
         bd=0,
         cursor="hand2",
-        font=(FONT_BRAND, 11, "bold" if kind == "primary" else "normal"),
-        padx=10,
-        pady=4,
+        font=(FONT_BRAND, 10, "bold" if kind == "primary" else "normal"),
+        padx=8,
+        pady=3,
         **style
     )
     config.update(kw)
@@ -176,7 +176,7 @@ def _entry(parent, var, w=6):
         parent,
         textvariable=var,
         width=w,
-        font=(FONT_BRAND, 13),
+        font=(FONT_BRAND, 11),
         justify="center",
         relief="flat",
         bd=1,
@@ -198,7 +198,7 @@ def _section_label(parent, text, bg=CARD_BG):
         text=text.upper(),
         fg=TEXT_MUTED,
         bg=bg,
-        font=(FONT_BRAND, 9, "bold")
+        font=(FONT_BRAND, 8, "bold")
     )
 
 
@@ -213,7 +213,7 @@ def _card(parent, title="", icon="", bg=CARD_BG):
 
     if title:
         header = tk.Frame(inner, bg=bg)
-        header.pack(fill=tk.X, padx=14, pady=(10, 4))
+        header.pack(fill=tk.X, padx=8, pady=(5, 1))
 
         title_text = f"{icon}  {title}" if icon else title
         tk.Label(
@@ -225,6 +225,6 @@ def _card(parent, title="", icon="", bg=CARD_BG):
         ).pack(side=tk.LEFT)
 
     content = tk.Frame(inner, bg=bg)
-    content.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 12))
+    content.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
 
     return outer, content
