@@ -25,8 +25,6 @@ from gui_theme import (
 from camera_settings import (
     get_camera_profile,
     save_camera_profile,
-    get_default_camera_settings,
-    save_camera_settings
 )
 
 PREVIEW_WIDTH = 600
@@ -879,19 +877,16 @@ class CameraPanelMixin:
     def _save_cam_profile(self):
             profile_name = self.cam_profile.get()
             profile = {
-                "exposure": self.exposure_var.get(),
-                "gain":     self.gain_var.get(),
+                "exposure": int(self.exposure_var.get()),
+                "gain":     int(self.gain_var.get()),
             }
             save_camera_profile(profile_name, profile)
             self._append_log(f"Camera profile '{profile_name}' saved.", "blue")
 
     def _reset_cam_profile(self):
             profile_name = self.cam_profile.get()
-            defaults = get_default_camera_settings()
-            if profile_name in defaults:
-                save_camera_settings(defaults)
-                self._load_camera_profile_into_ui(profile_name)
-                self._apply_cam_settings_to_preview()
-                self._append_log(
-                    f"Camera profile '{profile_name}' reset to defaults.", "blue")
+            self._load_camera_profile_into_ui(profile_name)
+            self._apply_cam_settings_to_preview()
+            self._append_log(
+                f"Camera profile '{profile_name}' reset to saved settings.", "blue")
 
