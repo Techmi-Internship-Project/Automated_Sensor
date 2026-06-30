@@ -228,7 +228,7 @@ class RunStatusLogMixin:
 
         tk.Label(
             capture_row,
-            textvariable=self.capture_count,
+            textvariable=self.capture_ratio,
             fg=TEXT_DARK,
             bg=CARD_BG,
             font=(FONT_BRAND, 10, "bold")

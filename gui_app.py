@@ -59,18 +59,19 @@ class SensorGUI(
             self.camera_label_to_index   = {}
 
             self.duration_days    = tk.StringVar(value="0")
-            self.duration_hours   = tk.StringVar(value="12")
+            self.duration_hours   = tk.StringVar(value="0")
             self.duration_minutes = tk.StringVar(value="0")
             self.interval_hours   = tk.StringVar(value="0")
-            self.interval_minutes = tk.StringVar(value="20")
+            self.interval_minutes = tk.StringVar(value="0")
 
             self.estimated_duration_text  = tk.StringVar(value="Total run time: —")
-            self.estimated_capture_count  = tk.StringVar(value="Estimated captures: —")
+            self.estimated_capture_count  = 0
             self.estimated_finish_text    = tk.StringVar(value="Est. finish: —")
+            self.capture_ratio = tk.StringVar(value="0 / 0")
 
             for v in (self.duration_days, self.duration_hours, self.duration_minutes,
                       self.interval_hours, self.interval_minutes):
-                v.trace_add("write", lambda *_: self.update_timing_estimates())
+                v.trace_add("write", lambda *_: self.update_timing_estimates()) # Tracer that calls function every new write
 
             self.status        = tk.StringVar(value="Idle")
             self.run_id_var    = tk.StringVar(value="—")
@@ -78,11 +79,11 @@ class SensorGUI(
             self.elapsed       = tk.StringVar(value="00:00:00")
             self.remaining     = tk.StringVar(value="—")
             self.progress_pct  = tk.DoubleVar(value=0.0)
-            self.capture_count = tk.StringVar(value="0 / 0")
             self.run_folder_var= tk.StringVar(value="—")
             self.last_img_var  = tk.StringVar(value="—")
             self.last_msg_var  = tk.StringVar(value="System idle.")
 
+            self.capture_count = 0
             self.last_seen_alert_id = 0
             self.alert_popup_open   = False
             self.stop_requested     = False

@@ -209,7 +209,7 @@ class BackendActionsMixin:
 
             total_est = (int(duration // (st.get("interval_seconds", 1) or 1))
                          if duration > 0 else 0)
-            self.capture_count.set(f"{captures} / {total_est}")
+            self.capture_ratio.set(f"{captures} / {self.estimated_capture_count}")
 
             self.run_folder_var.set(str(run_folder) if run_folder else "—")
             self.last_img_var.set(str(last_img) if last_img else "—")

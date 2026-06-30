@@ -146,21 +146,21 @@ class TimingPanelMixin:
                 i = self.get_interval_seconds_from_inputs()
             except ValueError:
                 self.estimated_duration_text.set("Total run time: Invalid input")
-                self.estimated_capture_count.set("Estimated captures: —")
+                self.estimated_capture_count = 0
                 self.estimated_finish_text.set("Est. finish: —")
                 return
 
             if i <= 0:
-                self.estimated_capture_count.set("Estimated captures: set interval")
+                self.estimated_capture_count =0
                 return
 
             dur_text  = format_elapsed(d)
-            est_caps  = int(d // i) + 1
+            est_caps  = int(d // i) + 1 # +1 because capture at time = 0
             finish_ts = time.time() + d
             finish    = time.strftime("%a %H:%M", time.localtime(finish_ts))
 
             self.estimated_duration_text.set(f"Total run time: {dur_text}")
-            self.estimated_capture_count.set(f"Estimated captures: {est_caps}")
+            self.estimated_capture_count = est_caps
             self.estimated_finish_text.set(f"Est. finish: {finish}")
 
     def get_duration_seconds_from_inputs(self):
