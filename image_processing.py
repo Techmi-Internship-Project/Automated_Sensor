@@ -2,6 +2,9 @@ import cv2 as cv
 import numpy as np
 from datetime import datetime 
 
+# Image file is formatted as: <microorganism_type>_run_<run_id>_<timestamp>.jpg
+# with the timestamp in the format YYYYMMDD_HHMMSS
+
 def subtract_background(measurement, noise) : 
     noise = noise.astype(np.int16)
     measurement = measurement.astype(np.int16)

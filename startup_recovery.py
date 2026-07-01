@@ -278,7 +278,45 @@ def handle_existing_runs_terminal(current_folder="current", training_folder="tra
     print("Invalid choice. Keeping existing runs.")
 
 
+def find_last_run_info(current_folder="current", training_folder="training") :
+    """
+    Finds the most recently touched run folder across current/ and training/, and
+    returns display info for Recovery / Summary panel.
     
+    Returns None if no run folders exist 
+    """
+
+    all_runs = (find_existing_runs(current_folder=current_folder) + find_existing_runs(current_folder=training_folder))
+
+    if not all_runs : 
+        return None # No runs found
+
+    def folder_mtime(folder) : 
+        try : 
+            return folder.stat().st_mtime
+        except OSError :
+            return 0
+
+    latest = max(all_runs, key=folder_mtime)
+
+    metadata = get_run_metadata(latest) or {}
+    organism_name = metadata.get("microorganism_type", "unknown")
+    run_id = metadata.get("run_id", "unknown")
+
+    images = sorted(latest.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
+    capture_count = len(images)
+
+    if images : 
+        last_capture_ts = images[-1].stat().st_mtime # Get the timestamp of the last image
+    else :
+        last_capture_ts = None
+
+    return {
+        "run_name": f"{organism_name} / run_{run_id}",
+        "capture_count" : capture_count,
+        "last_capture_ts": last_capture_ts,
+    }
+
 
 def wipe_folder_contents(folder_path) : 
     """

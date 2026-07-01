@@ -213,6 +213,7 @@ class RunStatusLogMixin:
                 padx=(8, 12),
                 pady=(0, 0)
             )
+            
         # ── Capture count row ──────────────────────────────────────────────────
         capture_row = tk.Frame(c, bg=CARD_BG)
         capture_row.grid(row=1, column=1, sticky="ew", pady=(8, 2))

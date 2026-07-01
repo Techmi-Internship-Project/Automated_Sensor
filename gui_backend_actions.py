@@ -196,47 +196,33 @@ class BackendActionsMixin:
                     self._append_log(
                         f"Run complete. Moved to {dest.name}.", "green")
                     self._show_run_summary(run_folder, captures, elapsed)
-                    self._last_run_var.set(
-                        dest.name if dest else "—")
-                    self._last_capture_var.set(
-                        time.strftime("%H:%M:%S"))
+                    
 
             self.update_control_states()
+            self.update_recovery_panel()
 
             # Progress
-            if duration > 0:
-                pct = max(0.0, min(100.0, elapsed / duration * 100))
-                rem = max(0.0, duration - elapsed)
-            else:
-                pct, rem = 0.0, 0.0
+            rem = max(0.0, duration - elapsed) if duration > 0 else 0.0
+            time_pct = max(0.0, min(100.0, elapsed / duration * 100)) if duration > 0 else 0.0
+            capture_pct = max(0.0, min(100.0, captures / self.estimated_capture_count * 100)) if self.estimated_capture_count > 0 else 0.0
 
-            self.progress_pct.set(pct)
-            self._draw_donut(pct)
+            self.progress_pct.set(capture_pct)
+            self._draw_donut(time_pct)
             self.elapsed.set(format_elapsed(elapsed))
             self.remaining.set(format_elapsed(rem))
 
-            total_est = (int(duration // (st.get("interval_seconds", 1) or 1))
-                         if duration > 0 else 0)
             self.capture_ratio.set(f"{captures} / {self.estimated_capture_count}")
 
-            self.run_folder_var.set(str(run_folder) if run_folder else "—")
-            self.last_img_var.set(str(last_img) if last_img else "—")
+            self.run_folder_var.set(str(run_folder) if run_folder else "-")
+            self.last_img_var.set(str(last_img) if last_img else "-")
 
-            if last_msg and last_msg != self.last_msg_var.get():
-                self.last_msg_var.set(last_msg)
-                if self.controller.is_running:
+            if last_msg and last_msg != self.last_msg_var.get() : # Only update if changed
+                 self.last_msg_var.set(last_msg)
+                 if self.controller.is_running: 
                     self._append_log(last_msg, last_msg_category)
 
-            # System ready indicator
-            ready_text = "⬤  System Ready" if not self.controller.is_running \
-                else "⬤  Running"
-            ready_bg = "#0d2e1a" if not self.controller.is_running else "#1a2e0d"
-            try:
-                self.system_ready_lbl.configure(text=ready_text, bg=ready_bg)
-            except Exception:
-                pass
-
             self.root.after(200, self.update_status_loop)
+
 
     def update_control_states(self):
             running  = self.controller.is_running

@@ -125,6 +125,7 @@ class SensorGUI(
             self._build_ui()
             self.update_timing_estimates()
             self._load_camera_profile_into_ui("normal")
+            self._init_health_system()
             self.update_status_loop()
             self.root.protocol("WM_DELETE_WINDOW", self.confirm_exit)
 

@@ -10,6 +10,9 @@ All methods in this mixin expect self to be a SensorGUI instance.
 import tkinter as tk
 from tkinter import messagebox
 import time
+import shutil
+import threading
+from datetime import datetime
 from pathlib import Path
 
 from gui_theme import (
@@ -19,6 +22,7 @@ from gui_theme import (
     NAVY,
     OFF_WHITE,
     SUCCESS,
+    DANGER,
     TEXT_DARK,
     TEXT_MUTED,
     format_elapsed,
@@ -32,7 +36,17 @@ from startup_recovery import (
     wipe_folder_contents,
     move_run_to_training,
     build_training_destination,
+    find_last_run_info,
 )
+from camera_tools import camera_can_capture
+from laser_control import LaserRelay
+
+# How often the background health check runs (camera/laser/storage).
+HEALTH_CHECK_INTERVAL_MS = 5000
+# Below this much free space on the data drive, storage is flagged unhealthy.
+MIN_FREE_STORAGE_GB = 5.0
+# Order matters for the "all systems" pill: items checked here decide overall health.
+HEALTH_ITEMS = ["Camera", "Laser Module", "Storage"]
 
 
 class RecoverySettingsMixin:
@@ -64,7 +78,7 @@ class RecoverySettingsMixin:
         stats.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         stats.grid_columnconfigure(0, weight=1)
 
-        # StringVars set by update_status_loop
+        # StringVars set by update_recovery_panel
         self._last_capture_var = tk.StringVar(value="—")
         self._last_run_var     = tk.StringVar(value="—")
         self._total_caps_var   = tk.StringVar(value="—")
@@ -72,7 +86,7 @@ class RecoverySettingsMixin:
         for i, (label, var) in enumerate([
             ("Last Successful Capture", self._last_capture_var),
             ("Last Run",                self._last_run_var),
-            ("Total Captures (All Runs)", self._total_caps_var),
+            ("Total Captures (Last Run)", self._total_caps_var),
         ]):
             _section_label(stats, label).grid(
                 row=i * 2, column=0,
@@ -88,43 +102,229 @@ class RecoverySettingsMixin:
             ).grid(row=i * 2 + 1, column=0, sticky="w")
 
         # ── Right: system health checklist ────────────────────────────────────
-        health = tk.Frame(c, bg="#f0fdf4",
-                          highlightthickness=1,
-                          highlightbackground="#bbf7d0")
-        health.grid(row=0, column=1, sticky="nsew")
-        health.grid_columnconfigure(0, weight=1)
+        # Stored on self so the health-check loop can recolor the whole box.
+        self._health_box = tk.Frame(c, bg="#eef2ff")
+        self._health_box.grid(row=0, column=1, sticky="nsew")
+        self._health_box.grid_columnconfigure(0, weight=1)
 
-        tk.Label(
-            health,
+        self._health_title_lbl = tk.Label(
+            self._health_box,
             text="System Health",
             fg=NAVY,
-            bg="#f0fdf4",
+            bg="#eef2ff",
             font=(FONT_BRAND, 10, "bold")
-        ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+        )
+        self._health_title_lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
 
-        # Each health item gets a StringVar so it can be updated at runtime
+        # Each health item gets a StringVar (text) and a Label ref (color),
+        # both updated live by the health-check loop.
         self._health_vars = {}
-        for i, item in enumerate(["Camera", "Laser Module", "Storage"]):
-            row_frame = tk.Frame(health, bg="#f0fdf4")
+        self._health_value_labels = {}
+        self._health_row_frames = {}
+        for i, item in enumerate(HEALTH_ITEMS):
+            row_frame = tk.Frame(self._health_box, bg="#eef2ff")
             row_frame.grid(row=i + 1, column=0, sticky="ew",
-                           padx=12, pady=(0, 4 if i < 2 else 10))
+                           padx=12, pady=(0, 4 if i < len(HEALTH_ITEMS) - 1 else 10))
+            self._health_row_frames[item] = row_frame
 
-            v = tk.StringVar(value="✓  Nominal")
+            v = tk.StringVar(value="…  Checking")
             self._health_vars[item] = v
 
             tk.Label(row_frame,
                      text=f"{item}:",
                      fg=TEXT_MUTED,
-                     bg="#f0fdf4",
+                     bg="#eef2ff",
                      font=(FONT_BRAND, 10),
                      width=14,
                      anchor="w").pack(side=tk.LEFT)
 
-            tk.Label(row_frame,
-                     textvariable=v,
-                     fg=SUCCESS,
-                     bg="#f0fdf4",
-                     font=(FONT_BRAND, 10, "bold")).pack(side=tk.LEFT)
+            value_lbl = tk.Label(row_frame,
+                                 textvariable=v,
+                                 fg=TEXT_MUTED,
+                                 bg="#eef2ff",
+                                 font=(FONT_BRAND, 10, "bold"))
+            value_lbl.pack(side=tk.LEFT)
+            self._health_value_labels[item] = value_lbl
+
+        # Health-state cache: None = unknown/checking, True/False once known.
+        self._health_state = {item: None for item in HEALTH_ITEMS}
+
+    # ── System health checks ──────────────────────────────────────────────────
+    def _init_health_system(self):
+        """
+        Call once after the UI is built. Starts the recurring background
+        health check (camera / laser / storage) and the recovery panel's
+        first disk scan.
+        """
+        self._recovery_dirty = True
+        self._prev_is_running = False
+        self._run_health_check()
+        self.update_recovery_panel()
+
+    def _run_health_check(self):
+        """
+        Checks laser presence and free storage synchronously (cheap, no
+        device I/O beyond listing serial ports / statvfs). Camera presence
+        is checked in a background thread since opening a capture device
+        can briefly block.
+
+        Skips actually opening the camera if the preview or an experiment
+        is already using it — in that case frames are clearly flowing, so
+        the camera is healthy by definition and we avoid grabbing a second
+        handle on the same device.
+        """
+
+        # ── Storage ──────────────────────────────────────────────────────────
+        try:
+            free_gb = shutil.disk_usage(self.current_folder).free / (1024 ** 3)
+            storage_ok = free_gb >= MIN_FREE_STORAGE_GB
+        except Exception:
+            storage_ok = False
+        self._apply_health_result("Storage", storage_ok)
+
+        # ── Laser ────────────────────────────────────────────────────────────
+        try:
+            laser_ok = LaserRelay().find_port() is not None
+        except Exception:
+            laser_ok = False
+        self._apply_health_result("Laser Module", laser_ok)
+
+        # ── Camera ───────────────────────────────────────────────────────────
+        if self._preview_running or self.controller.is_running:
+            self._apply_health_result("Camera", True)
+        else:
+            try:
+                cam_idx = self.get_selected_camera_index()
+            except RuntimeError:
+                self._apply_health_result("Camera", False)
+            else:
+                threading.Thread(
+                    target=self._camera_health_worker,
+                    args=(cam_idx,),
+                    daemon=True
+                ).start()
+
+        # Reschedule.
+        self.root.after(HEALTH_CHECK_INTERVAL_MS, self._run_health_check)
+
+    def _camera_health_worker(self, cam_idx):
+        """
+        Runs on a background thread: briefly opens the camera to confirm
+        it produces a frame, then hands the result back to the GUI thread.
+        """
+        try:
+            ok = camera_can_capture(cam_idx)
+        except Exception:
+            ok = False
+        self.root.after(0, lambda: self._apply_health_result("Camera", ok))
+
+    def _apply_health_result(self, item, ok: bool):
+        """
+        Updates one health-checklist row and refreshes the overall
+        system-ready indicators (topbar pill + sidebar card).
+        """
+        self._health_state[item] = ok
+        var = self._health_vars.get(item)
+        lbl = self._health_value_labels.get(item)
+        if var is None or lbl is None:
+            return
+
+        if ok:
+            var.set("✓  Nominal")
+            lbl.configure(fg=SUCCESS)
+        else:
+            var.set("✕  Unavailable")
+            lbl.configure(fg=DANGER)
+
+        self._refresh_overall_health_indicator()
+
+    def _refresh_overall_health_indicator(self):
+        """
+        Updates the topbar pill and the sidebar "All Systems" card based
+        on the combined health-check state. Only shows green if every
+        checked item is confirmed healthy.
+        """
+        states = list(self._health_state.values())
+        all_ok = all(states) and None not in states
+
+        if all_ok:
+            pill_text, pill_fg, pill_bg = "⬤  System Ready", "#d1fae5", "#0d2e1a"
+            title_fg, status_fg, status_text = "#bbf7d0", "#6ee7b7", "   Nominal"
+        else:
+            pill_text, pill_fg, pill_bg = "⬤  Attention Needed", "#fee2e2", "#3a0d0d"
+            title_fg, status_fg, status_text = "#fecaca", "#fca5a5", "   Issue Detected"
+
+        try:
+            self.system_ready_lbl.configure(text=pill_text, fg=pill_fg, bg=pill_bg)
+        except Exception:
+            pass
+
+        try:
+            self._sidebar_health_title_lbl.configure(fg=title_fg)
+            self._sidebar_health_status_lbl.configure(fg=status_fg, text=status_text)
+        except Exception:
+            pass
+
+    # ── Recovery / Summary live updates ───────────────────────────────────────
+    def _format_capture_timestamp(self, ts: float) -> str:
+        """
+        Formats a unix timestamp as 'Today, HH:MM' or 'Mon DD, HH:MM'.
+        """
+        dt = datetime.fromtimestamp(ts)
+        now = datetime.now()
+        if dt.date() == now.date():
+            return f"Today, {dt.strftime('%H:%M')}"
+        return dt.strftime("%b %d, %H:%M")
+
+    def update_recovery_panel(self):
+        """
+        Keeps the Recovery / Summary stats current.
+
+        While a run is active, this reads live numbers straight out of the
+        controller's status dict (cheap, no disk access) so the panel
+        updates every poll tick. While idle, it only rescans disk when
+        something has actually changed (self._recovery_dirty), since
+        walking run folders is comparatively expensive.
+        """
+
+        if self.controller.is_running:
+            self._prev_is_running = True
+            st = self.controller.get_status()
+            run_folder = st.get("run_folder")
+            captures = st.get("capture_count", 0)
+            last_img = st.get("last_saved_image")
+
+            if run_folder:
+                self._last_run_var.set(f"{self.organism.get()} / {Path(run_folder).name}")
+            self._total_caps_var.set(str(captures))
+            if last_img:
+                self._last_capture_var.set(self._format_capture_timestamp(time.time()))
+            return
+
+        # Just transitioned from running -> idle: the run that finished
+        # (whether completed, stopped, or errored) is now "the last run".
+        if self._prev_is_running:
+            self._recovery_dirty = True
+            self._prev_is_running = False
+
+        if not self._recovery_dirty:
+            return
+        self._recovery_dirty = False
+
+        info = find_last_run_info(
+            current_folder=self.current_folder,
+            training_folder=self.training_folder
+        )
+
+        if info is None:
+            self._last_run_var.set("—")
+            self._total_caps_var.set("—")
+            self._last_capture_var.set("—")
+            return
+
+        self._last_run_var.set(info["run_name"])
+        self._total_caps_var.set(str(info["capture_count"]))
+        self._last_capture_var.set(self._format_capture_timestamp(info["last_capture_ts"]))
 
     # ── Settings popup ────────────────────────────────────────────────────────
     def _open_settings_window(self):

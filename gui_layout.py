@@ -184,22 +184,30 @@ class LayoutMixin:
                           lambda e: self._open_settings_window())
 
         # ── All Systems Nominal card ───────────────────────────────────────────
-        nom = tk.Frame(sb, bg=NAVY_2, padx=10, pady=10)
-        nom.grid(row=5, column=0, sticky="sew", padx=10, pady=(0, 4))
+        # Refs stored on self so health-check system can recolor this
+        # card live instead of leaving it as static
 
-        tk.Label(nom,
-                 text="⬤  All Systems",
-                 fg="#bbf7d0",
-                 bg=NAVY_2,
-                 font=(FONT_BRAND, 10, "bold"),
-                 anchor="w").pack(fill=tk.X)
+        self._sidebar_health_box = tk.Frame(sb, bg=NAVY_2, padx=10, pady=10)
+        self._sidebar_health_box.grid(row=5, column=0, sticky="sew", padx=10, pady=(0,4))
 
-        tk.Label(nom,
-                 text="   Nominal",
-                 fg="#6ee7b7",
-                 bg=NAVY_2,
-                 font=(FONT_BRAND, 10),
-                 anchor="w").pack(fill=tk.X)
+        self._sidebar_health_title_lbl = tk.Label(
+                self._sidebar_health_box,
+                text="⬤  All Systems",
+                fg="#9c9a9a",
+                bg=NAVY_2,
+                font=(FONT_BRAND, 10, "bold"),
+                anchor="w")
+        self._sidebar_health_title_lbl.pack(fill=tk.X)
+
+
+        self._sidebar_health_status_lbl = tk.Label(
+                self._sidebar_health_box,
+                text="   Checking...",
+                fg="#6ee7b7",
+                bg=NAVY_2,
+                font=(FONT_BRAND, 10),
+                anchor="w")
+        self._sidebar_health_status_lbl.pack(fill=tk.X)
 
         # ── Version label ─────────────────────────────────────────────────────
         tk.Label(sb,
