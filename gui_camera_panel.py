@@ -359,6 +359,7 @@ class CameraPanelMixin:
                 padx=12, pady=4, cursor="hand2"
             )
             self._laser_btn.pack(side=tk.RIGHT)
+            self._laser_btn.configure(state=tk.DISABLED)
 
             # Canvas
             self._PREV_W, self._PREV_H = PREVIEW_WIDTH, PREVIEW_HEIGHT
@@ -466,6 +467,7 @@ class CameraPanelMixin:
 
             set_normal_exposure(self._preview_cap)
             self._preview_running = True
+            self._laser_btn.configure(state=tk.NORMAL)
             self._preview_toggle_btn.configure(
                 text="⏹  Preview ON",
                 bg=TECHMI_BLUE, fg="white"
@@ -485,6 +487,7 @@ class CameraPanelMixin:
                 self._preview_cap.release()
                 self._preview_cap = None
 
+            self._laser_btn.configure(state=tk.DISABLED)
             self._preview_toggle_btn.configure(
                 text="▶  Preview OFF",
                 bg="#eef2ff", fg=TECHMI_BLUE

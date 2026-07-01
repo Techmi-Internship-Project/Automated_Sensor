@@ -185,7 +185,6 @@ class CameraSetupWindow :
 
         return True # Opened successfully
         
-        set_normal_exposure(self.cap)
 
     def open_laser_relay(self) : 
         try : 

@@ -77,6 +77,10 @@ class BackendActionsMixin:
                 return
 
             try:
+                # Clear any error from previous experiment 
+                self.controller.last_error = None
+                self.error_var.set("-")
+
                 cam_idx  = self.get_selected_camera_index()
                 duration = self.get_duration_seconds_from_inputs()
                 interval = self.get_interval_seconds_from_inputs()
@@ -175,8 +179,10 @@ class BackendActionsMixin:
                     self.alert_popup_open = False
 
             if self.controller.last_error:
-                self.error_var.set(self.controller.last_error)
-                self._append_log(f"Error: {self.controller.last_error}", "red")
+                err = self.controller.last_error
+                self.error_var.set(err)
+                self._append_log(f"Error: {err}", "red")
+                self.controller.last_error = None
 
             # Move completed run
             if (not self.controller.is_running

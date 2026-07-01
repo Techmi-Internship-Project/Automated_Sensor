@@ -107,7 +107,7 @@ class CameraPreviewPanel:
         self.overlay_btn.pack(side=tk.LEFT, padx=(6, 0))
 
         # Laser toggle (right-aligned)
-        self.laser_btn = tk.Button(
+        self._laser_btn = tk.Button(
             ctrl_bar,
             text="⬤  Laser: OFF",
             command=self._toggle_laser,
@@ -117,7 +117,8 @@ class CameraPreviewPanel:
             font=("Segoe UI", 10, "bold"),
             padx=12, pady=4, cursor="hand2"
         )
-        self.laser_btn.pack(side=tk.RIGHT)
+        self._laser_btn.pack(side=tk.RIGHT)
+        self._laser_btn.configure(state=tk.DISABLED) # Only enable if preview is running
 
         # ── Video canvas ─────────────────────────────────────────────────────
         self.canvas = tk.Canvas(
@@ -184,9 +185,15 @@ class CameraPreviewPanel:
     # ── Preview toggle ────────────────────────────────────────────────────────
     def _toggle_preview(self):
         if not self.running:
+            self.open_laser_relay()
             self.start_preview_with_current_camera()
+            self._laser_btn.configure(state=tk.NORMAL)
+            
         else:
             self.stop_preview()
+            self.close_laser_relay()
+            self._laser_btn.configure(state=tk.DISABLED)
+
 
     def start_preview_with_current_camera(self):
         """Called internally; uses camera_index set via start_preview()."""
@@ -336,16 +343,16 @@ class CameraPreviewPanel:
             if self.laser_is_on:
                 self.laser.off()
                 self.laser_is_on = False
-                self.laser_btn.configure(
-                    text="⬤  Laser: OFF",
+                self._laser_btn.configure(
+                    text="⬤  Laser: OFF", 
                     bg=NAVY_2, fg="#9ca3af"
                 )
                 self._log("Laser OFF.", "blue")
             else:
                 self.laser.on()
                 self.laser_is_on = True
-                self.laser_btn.configure(
-                    text="⬤  Laser: ON",
+                self._laser_btn.configure(
+                    text="⬤  Laser: ON", textcolor="#16a34a",
                     bg="#16a34a", fg="white"
                 )
                 self._log("Laser ON.", "blue")
