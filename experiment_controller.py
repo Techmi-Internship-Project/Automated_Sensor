@@ -155,6 +155,7 @@ class ExperimentController :
                 output_root=output_root,
                 stop_event=self.stop_event,
                 status_callback=self.update_status,
+                duration_callback=self.get_requested_duration_seconds,
                 continue_with_prev_roi=continue_with_prev_roi,
                 max_consecutive_failures=max_consecutive_failures
             )
@@ -290,17 +291,6 @@ class ExperimentController :
             last_message=message
         )
 
-
-        # Lock duration while changing
-        with self.duration_lock : 
-            self.requested_duration_seconds += seconds_delta
-            updated_duration  = self.requested_duration_seconds
-
-        # Update GUI status with new duration
-        self.update_status(
-            duration_seconds=updated_duration,
-            last_message=f"Added {seconds_delta // 3600}h to the experiment"
-        )
 
 
 

@@ -18,6 +18,7 @@ def run_experiment(
         output_root="current",
         stop_event=None,
         status_callback=None,
+        duration_callback=None,
         continue_with_prev_roi=True,
         max_consecutive_failures=3
 ):
@@ -97,7 +98,8 @@ def run_experiment(
             current_time = time.monotonic()
             elapsed_time = current_time - start_time
 
-            send_status(elapsed_seconds=elapsed_time, duration_seconds=duration_seconds)
+            current_duration = duration_callback()
+            send_status(elapsed_seconds=elapsed_time, duration_seconds=current_duration)
 
             # Stop once duration reached
             if elapsed_time >= duration_seconds:
