@@ -110,6 +110,7 @@ class SensorGUI(
             self._run_adjust_btns = []
             self._idle_only_widgets = []
             self._end_after_next_requested = False
+            self._status_loop_active = False  # Guard against reentrant update_status_loop
 
             # ttk style for progress bar
             self._style = ttk.Style()

@@ -321,10 +321,11 @@ class RunStatusLogMixin:
                       width=arc_width,
                       style="arc")
 
-        # Progress arc (clockwise from top, TECHMI blue)
-        if pct >= 0.25 :
-                extent = -pct * 3.6
-        else :
+        # Progress arc (clockwise from top, TECHMI blue).
+        # Cap at 99.9 % to avoid extent = -360, which Tkinter renders as empty.
+        if pct >= 0.25:
+            extent = -min(pct, 99.9) * 3.6
+        else:
             extent = 0
 
         if extent != 0:
@@ -335,7 +336,7 @@ class RunStatusLogMixin:
                         style="arc")
 
         # Percentage text in the centre
-        cv.create_text(cx, cy - 7,
+        cv.create_text(cx, cy - 9,
                     text=f"{int(pct)}%",
                     fill=TEXT_DARK,
                     font=(FONT_BRAND, 11, "bold"))

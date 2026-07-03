@@ -102,12 +102,7 @@ def run_experiment(
             current_duration = duration_callback()
             send_status(elapsed_seconds=elapsed_time, duration_seconds=current_duration)
 
-            # Stop once duration reached
-            if elapsed_time >= current_duration:
-                print("Experiment duration reached.")
-                finish_reason = "duration_reached"
-                send_status(state="finished", last_message="Experiment duration reached")
-                break
+            
 
             # Capture when next scheduled time has arrived
             if current_time >= next_capture_time:
@@ -178,7 +173,7 @@ def run_experiment(
 
                     capture_number += 1
 
-                    if (end_after_next_capture_event is not None
+                    if (end_after_next_capture_event is not None # TODO
                             and end_after_next_capture_event.is_set()):
                         finish_reason = "end_after_capture"
                         send_status(state="finished",
@@ -196,24 +191,30 @@ def run_experiment(
                     # ArUco not found on the very first capture — no fallback
                     # was available, so direct the user to the camera setup widget.
                     if "ARUCO_NOT_FOUND" in error_text and last_known_roi is None:
+                        
                         raise RuntimeError(
                             "ARUCO_NOT_FOUND: Could not detect ArUco markers on the "
                             "first capture. Please use the Camera Setup widget in the "
                             "main window to verify your camera and marker placement "
                             "before starting the experiment."
                         )
+                    
+                        
 
                     consecutive_capture_failures += 1
 
-                    if "ARUCO_NOT_FOUND" in error_text:
+                    if "ARUCO_NOT_FOUND" in error_text: # TODO
                         # Markers disappeared mid-run and continue_with_prev_roi
                         # is off, so this counts as a failure.
                         send_status(
                             last_capture_result="ArUco markers missing",
                             last_error=error_text,
                             last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: markers not found",
-                            alert_message="Could not detect all four ArUco markers.\n\n",
+                            
                         )
+                        finish_reason = "fatal_error"
+                        break
+
                     else:
                         send_status(
                             state="warning",
@@ -230,6 +231,14 @@ def run_experiment(
                 # Schedule next capture from original timeline
                 next_capture_time += interval_seconds
             
+
+            # Stop once duration reached
+            if elapsed_time >= current_duration:
+                print("Experiment duration reached.")
+                finish_reason = "duration_reached"
+                send_status(state="finished", last_message="Experiment duration reached")
+                break
+
             send_status(last_message="Waiting for next capture...")
             time.sleep(0.1)
 
@@ -245,6 +254,7 @@ def run_experiment(
         )
         # Re-raise error so ExperimentController knows run failed
         raise
+    
     except KeyboardInterrupt:
         print("\nExperiment manually stopped.")
         finish_reason = "user_stopped"

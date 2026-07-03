@@ -182,6 +182,28 @@ class BackendActionsMixin:
                     pass
 
     def update_status_loop(self):
+            # Prevent reentrant calls spawned by Tkinter's modal-dialog nested event
+            # loop (e.g. messagebox.showwarning).  Without this guard, every 200 ms
+            # tick that fires while a popup is open spawns a new parallel loop, and
+            # after a few seconds the canvas is being redrawn hundreds of times per
+            # second, flooding the event queue and freezing the display.
+            try: 
+                if self._status_loop_active:
+                    self.root.after(200, self.update_status_loop)
+                    return
+                self._status_loop_active = True
+                try:
+                    self._update_status_loop_body()
+                finally:
+                    self._status_loop_active = False
+
+            except Exception as e: 
+                print(f"Update status error: {e}")
+
+            finally:
+                self.root.after(200, self.update_status_loop)
+
+    def _update_status_loop_body(self):
             st = self.controller.get_status()
             elapsed   = st.get("elapsed_seconds",         0.0)
             duration  = st.get("duration_seconds",         0.0)
@@ -253,10 +275,8 @@ class BackendActionsMixin:
 
             if last_msg and last_msg != self.last_msg_var.get() : # Only update if changed
                  self.last_msg_var.set(last_msg)
-                 if self.controller.is_running: 
+                 if self.controller.is_running:
                     self._append_log(last_msg, last_msg_category)
-
-            self.root.after(200, self.update_status_loop)
 
 
     def update_control_states(self):
