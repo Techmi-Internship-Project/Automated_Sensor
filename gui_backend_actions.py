@@ -273,6 +273,7 @@ class BackendActionsMixin:
                 except ValueError:
                     pass
             else:
+                # Update using values from timing input panel, not live updates
                 self.update_timing_estimates()
 
             capture_pct = max(0.0, min(100.0, captures / self.estimated_capture_count * 100)) if self.estimated_capture_count > 0 else 0.0

@@ -21,7 +21,9 @@ def run_experiment(
         duration_callback=None,
         continue_with_prev_roi=True,
         max_consecutive_failures=3,
-        end_after_next_capture_event=None
+        end_after_next_capture_event=None,
+        hardware_error_event=None,
+        hardware_error_message_getter=None,
 ):
     """
     Run repeated measurements for specified amount of time
@@ -95,6 +97,10 @@ def run_experiment(
                 finish_reason = "user_stopped"
                 send_status(state="stopping", last_message="Stop requested.")
                 break
+
+            if hardware_error_event is not None and hardware_error_event.is_set() : 
+                msg = hardware_error_message_getter() if hardware_error_message_getter else "Hardware disconnected"
+                raise RuntimeError(f"HARDWARE_FAULT: {msg}")
 
             current_time = time.monotonic()
             elapsed_time = current_time - start_time

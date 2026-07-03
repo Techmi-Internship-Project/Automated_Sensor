@@ -13,6 +13,8 @@ class ExperimentController :
     def __init__(self):
         self.thread = None # Background experiment thread
         self.stop_event = threading.Event() # Event used to stop experiment
+        self.hardware_error_event = threading.Event() # Event used to stop experiment if hardware error
+        self.hardware_error_message = None
         self.is_running = False
         self.last_error = None # Most recent error message
         self.last_run_folder = None # Folder where most recent run was saved
@@ -62,6 +64,8 @@ class ExperimentController :
             raise RuntimeError("Experiment is already running")
         
         self.stop_event.clear() # Clear any previous stop request
+        self.hardware_error_event.clear() # Clear any previous hardware error events
+        self.hardware_error_message = None
         self.last_error = None
         self.last_run_folder = None
         self.camera_index = camera_index
@@ -161,7 +165,9 @@ class ExperimentController :
                 duration_callback=self.get_requested_duration_seconds,
                 continue_with_prev_roi=continue_with_prev_roi,
                 max_consecutive_failures=max_consecutive_failures,
-                end_after_next_capture_event=self.end_after_current_capture_event
+                end_after_next_capture_event=self.end_after_current_capture_event,
+                hardware_error_event=self.hardware_error_event,
+                hardware_error_message_getter=lambda: self.hardware_error_message,
             )
 
             # Check if the stop button was not requested.

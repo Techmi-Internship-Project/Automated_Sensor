@@ -224,7 +224,11 @@ class RecoverySettingsMixin:
         """
         Updates one health-checklist row and refreshes the overall
         system-ready indicators (topbar pill + sidebar card).
+
+        If system health is critical and an experiment is running, 
+        signals are sent to stop experiment as soon as error is detected. 
         """
+        prev_state = self._health_state.get(item)
         self._health_state[item] = ok
         var = self._health_vars.get(item)
         lbl = self._health_value_labels.get(item)
@@ -239,6 +243,11 @@ class RecoverySettingsMixin:
             lbl.configure(fg=DANGER)
 
         self._refresh_overall_health_indicator()
+
+        # Signal running experiment if a critical device just failed
+        if not ok and prev_state is True and self.controller.is_running : 
+            self.controller.hardware_error_message = f"{item} disconnected during experiment"
+            self.controller.hardware_error_event.set()
 
     def _refresh_overall_health_indicator(self):
         """
