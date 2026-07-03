@@ -558,12 +558,19 @@ class RecoverySettingsMixin:
         btn_row = tk.Frame(win, bg=OFF_WHITE)
         btn_row.pack(padx=28)
 
-        _btn(btn_row, "Save",
+        _settings_save_btn = _btn(btn_row, "Save",
              lambda: self._save_settings(win),
-             "primary").pack(side=tk.LEFT, padx=(0, 8))
-        _btn(btn_row, "Cancel",
+             "primary")
+        _settings_save_btn.pack(side=tk.LEFT, padx=(0, 8))
+        
+        cancel_btn = _btn(btn_row, "Cancel",
              win.destroy,
-             "secondary").pack(side=tk.LEFT)
+             "secondary")
+        cancel_btn.pack(side=tk.LEFT)
+
+        if self.controller.is_running : 
+            _settings_save_btn.configure(state="disabled")
+            cancel_btn.configure(state="normal")
 
     
     def _get_laser_port_override(self): 

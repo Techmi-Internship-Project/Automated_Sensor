@@ -316,6 +316,17 @@ class FilledSliderInput(tk.Frame):
             fill=TECHMI_BLUE,
             outline=TECHMI_BLUE
         )
+
+    def set_enabled(self, enabled: bool) : 
+        state = tk.NORMAL if enabled else tk.DISABLED
+        self.entry.configure(state=state)
+
+        if enabled : 
+            self.canvas.bind("<Button-1>", self._on_mouse)
+            self.canvas.bind("<B1-Motion>", self._on_mouse)
+        else : 
+            self.canvas.unbind("<Button-1>")
+            self.canvas.unbind("<B1-Motion>")
 class CameraPanelMixin:
     """
     GUI section mixin split out of the original SensorGUI class.
@@ -860,20 +871,31 @@ class CameraPanelMixin:
         ).grid(row=0, column=0, sticky="ew", pady=(0, 8))
 
         # Save profile button.
-        _btn(
+        self._save_btn = _btn(
             action_col,
             "💾  Save Profile",
             self._save_cam_profile,
             "primary"
-        ).grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        )
+        self._save_btn.grid(row=1, column=0, sticky="ew", pady=(0, 6))
 
         # Reset button.
-        _btn(
+        self._reset_btn = _btn(
             action_col,
             "↺  Reset to Default",
             self._reset_cam_profile,
             "secondary"
-        ).grid(row=2, column=0, sticky="ew")
+        )
+        self._reset_btn.grid(row=2, column=0, sticky="ew")
+
+        self._idle_only_widgets += [
+            self._norm_btn,
+            self._low_btn,
+            self._exposure_slider,
+            self._gain_slider,
+            self._save_btn,
+            self._reset_btn
+        ]
 
         
     def _switch_cam_profile(self, name: str):

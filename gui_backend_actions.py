@@ -15,6 +15,7 @@ from startup_recovery import (
     move_run_to_training,
     build_training_destination
 )
+from gui_camera_panel import FilledSliderInput
 
 
 class BackendActionsMixin:
@@ -322,7 +323,12 @@ class BackendActionsMixin:
             idle_state = "disabled" if running else "normal"
             for w in self._idle_only_widgets:
                 try:
-                    w.configure(state=idle_state)
+                    if isinstance(w, FilledSliderInput) : 
+                        w.set_enabled(not running)
+
+                    else : 
+                        w.configure(state=idle_state)
+                        
                 except Exception:
                     pass
 
