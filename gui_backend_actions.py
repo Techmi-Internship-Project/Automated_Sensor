@@ -214,6 +214,9 @@ class BackendActionsMixin:
             last_msg_category = st.get("last_message_category", "green")
             run_ok    = st.get("run_completed_successfully", False)
 
+            if run_folder and run_folder != "-" :
+                 self._active_log_path = Path(run_folder) / "run.log"
+
             alert_msg = st.get("alert_message", None)
             alert_id  = st.get("alert_id",      0)
 
@@ -245,14 +248,16 @@ class BackendActionsMixin:
                     current_folder=self.current_folder
                 )
                 self.controller.last_run_folder = None
-                wipe_folder_contents(self.current_folder)
-
                 if ok and dest and str(dest) != self.last_summary_dest:
                     self.last_summary_dest = str(dest)
                     self._append_log(
                         f"Run complete. Moved to {dest.name}.", "green")
                     self._show_run_summary(run_folder, captures, elapsed)
                     
+                self._active_log_path = None
+                wipe_folder_contents(self.current_folder)
+
+                
 
             self.update_control_states()
             self.update_recovery_panel()

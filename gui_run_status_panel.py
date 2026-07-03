@@ -20,6 +20,7 @@ Row assignments (right column):
 import tkinter as tk
 from tkinter import ttk
 import time
+from pathlib import Path
 
 from gui_theme import (
     CARD_BG,
@@ -406,6 +407,8 @@ class RunStatusLogMixin:
         message  : str   Text to display.
         category : str   One of 'gray', 'blue', 'green', 'red'.
                          Controls both the dot colour and the text colour.
+
+        Will incrementally write logs to a file in the current/ folder as experiment runs
         """
 
         timestamp = time.strftime("%H:%M:%S")
@@ -417,3 +420,13 @@ class RunStatusLogMixin:
         self.log_text.insert("end", f"{message}\n", category)
         self.log_text.configure(state="disabled")
         self.log_text.see("end")
+
+        # Write to run log if experiment is active
+        if self._active_log_path is not None : 
+            try:
+                log_path = self._active_log_path
+                with open(log_path, "a", encoding="utf-8") as f: 
+                    full_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                    f.write(f"[{full_ts}][{category.upper()}] {message}\n")
+            except Exception :
+                pass

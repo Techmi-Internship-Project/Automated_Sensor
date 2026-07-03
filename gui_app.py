@@ -51,6 +51,7 @@ class SensorGUI(
             self.training_folder = training_folder
             self.current_folder.mkdir(parents=True, exist_ok=True)
             self.training_folder.mkdir(parents=True, exist_ok=True)
+            self._active_log_path = None
 
             # ── StringVars ────────────────────────────────────────────────────────
             self.organism        = tk.StringVar()
