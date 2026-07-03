@@ -31,6 +31,7 @@ from gui_theme import (
     TECHMI_BLUE,
     TEXT_DARK,
     TEXT_MUTED,
+    WARNING,
     _btn,
     _card,
     _section_label,
@@ -71,10 +72,10 @@ class RunStatusLogMixin:
         _section_label(c, "Live Run Adjustments").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(0, 2))
 
-        # Adjustment buttons: +1h, +6h, −1h
+        # Adjustment buttons: +1h, +6h, -1h, End After Next
         adj_frame = tk.Frame(c, bg=CARD_BG)
         adj_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0,2))
-        adj_frame.grid_columnconfigure((0, 1, 2), weight=1)
+        adj_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         for i, (label, delta) in enumerate([
             ("+1h",  3600),
@@ -82,7 +83,7 @@ class RunStatusLogMixin:
             ("-1h", -3600),
         ]):
             btn_border = tk.Frame(adj_frame, bg=CARD_BORDER, padx=1, pady=1)
-            
+
             btn_border.grid(
                 row=0,
                 column=i,
@@ -110,6 +111,27 @@ class RunStatusLogMixin:
             b.pack(fill=tk.BOTH, expand=True)
 
             self._run_adjust_btns.append(b)
+
+        # End After Next Capture button (column 3, same row as time adjustments)
+        end_border = tk.Frame(adj_frame, bg=CARD_BORDER, padx=1, pady=1)
+        end_border.grid(row=0, column=3, sticky="ew", padx=2, pady=1)
+
+        self._end_after_next_btn = tk.Button(
+            end_border,
+            text="End After Next",
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            bg=CARD_BG,
+            fg=WARNING,
+            activebackground=WARNING,
+            activeforeground="white",
+            font=(FONT_BRAND, 9),
+            padx=6,
+            pady=2,
+            command=self._request_end_after_next
+        )
+        self._end_after_next_btn.pack(fill=tk.BOTH, expand=True)
 
     # ── Live Status panel ─────────────────────────────────────────────────────
     def _build_live_status_panel(self, parent, row=0):

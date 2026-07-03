@@ -51,6 +51,7 @@ class ExperimentController :
             camera_index,
             duration_seconds,
             interval_seconds,
+            camera_name=None,
             output_root="current",
             continue_with_prev_roi=True,
             max_consecutive_failures=3,
@@ -90,6 +91,7 @@ class ExperimentController :
             args=(
             microorganism_type,
             camera_index,
+            camera_name,
             run_id,
             duration_seconds,
             interval_seconds,
@@ -111,6 +113,7 @@ class ExperimentController :
         self,
         microorganism_type,
         camera_index,
+        camera_name,
         run_id,
         duration_seconds,
         interval_seconds,
@@ -157,7 +160,8 @@ class ExperimentController :
                 status_callback=self.update_status,
                 duration_callback=self.get_requested_duration_seconds,
                 continue_with_prev_roi=continue_with_prev_roi,
-                max_consecutive_failures=max_consecutive_failures
+                max_consecutive_failures=max_consecutive_failures,
+                end_after_next_capture_event=self.end_after_current_capture_event
             )
 
             # Check if the stop button was not requested.
@@ -210,6 +214,8 @@ class ExperimentController :
 
                     # Turn the laser off for safety.
                     self.laser.off()
+                    time.sleep(0.2)
+
 
                 # Ignore laser-off errors during cleanup.
                 except RuntimeError:
@@ -253,6 +259,14 @@ class ExperimentController :
         with self.duration_lock : 
             return self.requested_duration_seconds
         
+    def end_after_next_capture(self):
+        """
+        Signals the experiment to finish cleanly after the next successful capture.
+        """
+        if not self.is_running:
+            return
+        self.end_after_current_capture_event.set()
+
     def adjust_time(self, seconds_delta, minimum_extra_seconds=600) :
         """
         Changes time to the active experiment duration, and does not let time go below 10 minutes

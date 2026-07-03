@@ -88,21 +88,22 @@ class SetupPanelMixin:
                 cam_opts = ["No cameras found"]
                 self.selected_camera.set(cam_opts[0])
 
-            cam_fr = tk.Frame(c, bg=CARD_BG, highlightthickness=1,
+            self._cam_fr = tk.Frame(c, bg=CARD_BG, highlightthickness=1,
                               highlightbackground=CARD_BORDER)
-            cam_fr.grid(row=4, column=0, sticky="ew", pady=(0, 6), padx=(0, 6))
-            cam_fr.grid_columnconfigure(0, weight=1)
-            self._cam_display = tk.Label(cam_fr, textvariable=self.selected_camera,
+            self._cam_fr.grid(row=4, column=0, sticky="ew", pady=(0, 6), padx=(0, 6))
+            self._cam_fr.grid_columnconfigure(0, weight=1)
+            self._cam_display = tk.Label(self._cam_fr, textvariable=self.selected_camera,
                                          bg="white", fg=TEXT_DARK,
                                          font=(FONT_BRAND, 9),
                                          anchor="w", padx=10, pady=6)
             self._cam_display.grid(row=0, column=0, sticky="ew")
-            tk.Label(cam_fr, text="▾", bg="white", fg=TEXT_MUTED,
-                     font=(FONT_BRAND, 9), padx=8).grid(row=0, column=1)
-            for w in (self._cam_display, cam_fr):
+            self._cam_arrow = tk.Label(self._cam_fr, text="▾", bg="white", fg=TEXT_MUTED,
+                     font=(FONT_BRAND, 9), padx=8)
+            self._cam_arrow.grid(row=0, column=1)
+            for w in (self._cam_display, self._cam_fr):
                 w.bind("<Button-1>", self._show_camera_menu)
 
-            self._refresh_cam_btn = _btn(c, "↻", self.refresh_camera_menu_on_open,
+            self._refresh_cam_btn = _btn(c, "↻", self.refresh_camera_menu,
                                          kind="ghost")
             self._refresh_cam_btn.grid(row=4, column=1, sticky="ew", pady=(0, 6))
             self._idle_only_widgets.append(self._refresh_cam_btn)
@@ -137,9 +138,8 @@ class SetupPanelMixin:
                 menu.grab_release()
 
     def _show_camera_menu(self, event=None):
-            if self.controller.is_running:
+            if self.controller.is_running or self._preview_running:
                 return
-            self.refresh_camera_menu_on_open()
             opts = list(self.camera_label_to_index.keys())
             if not opts:
                 return

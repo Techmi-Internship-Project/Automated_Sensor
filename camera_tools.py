@@ -1,64 +1,93 @@
 import cv2 as cv
+import subprocess
+import re
 
-MAX_CAMERA_INDEX = 10 # Arbitrary number, average use case user will have max 2 cameras
-    
+MAX_CAMERA_INDEX = 10
 
-def get_camera_names() :
+
+def get_camera_devices():
     """
-    Scans device for available cameras
+    Gets capturable camera devices from WMI, excluding IR cameras.
+    IR cameras appear in WMI but MSMF skips them, so we skip them too
+    to keep the two lists in sync.
     """
-    try : 
-        from pygrabber.dshow_graph import FilterGraph # So Windows DirectShow names can be read
 
-        graph = FilterGraph()
-
-        return graph.get_input_devices()
-    
-    except Exception : 
+    try:
+        result = subprocess.run(
+            ["wmic", "path", "Win32_PnPEntity",
+             "where", "PNPClass='Camera'",
+             "get", "Name,DeviceID"],
+            capture_output=True, text=True, timeout=5
+        )
+        devices = []
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("DeviceID"):
+                continue
+            parts = re.split(r'\s{2,}', line)
+            if len(parts) < 2:
+                continue
+            device_id = parts[0].strip()
+            name = parts[-1].strip()
+            if "IR" in name or "infrared" in name.lower():
+                continue
+            devices.insert(0, {"device_id": device_id, "name": name})
+        return devices
+    except Exception:
         return []
-    
 
-def camera_can_capture(index) : 
-    """
-    Checks if camera index can open and return a frame
-    """
-    cap = cv.VideoCapture(index, cv.CAP_DSHOW)
 
-    if not cap.isOpened() : 
-        cap.release() # Release just in case
+def camera_can_capture(index):
+    cap = cv.VideoCapture(index, cv.CAP_MSMF)
+    if not cap.isOpened():
+        cap.release()
         return False
-    
     success, frame = cap.read()
     cap.release()
-    
-    return success and frame is not None # Camera produced a real frame
+    return success and frame is not None
 
 
-def scan_available_cameras()  :
+def scan_available_cameras():
     """
-    Scans available cameras
+    Matches MSMF indices to WMI devices positionally after filtering
+    non-capturable devices (IR cameras) from the WMI list.
     """
 
-    camera_names = get_camera_names()
-    available_cameras = []
+    devices = get_camera_devices()
 
-    for index in range(MAX_CAMERA_INDEX) : 
-        #if camera_can_capture(index) : 
-        # Check if index has matching DirectShow name
-        if index < len(camera_names) : 
-            camera_name = camera_names[index]
+    cv.utils.logging.setLogLevel(cv.utils.logging.LOG_LEVEL_SILENT)
 
-        else : # No real name exists
-            camera_name = f"Camera {index}"
+    working_indices = []
+    consecutive_failures = 0
+    for index in range(MAX_CAMERA_INDEX):
+        cap = cv.VideoCapture(index, cv.CAP_MSMF)
+        opened = cap.isOpened()
+        cap.release()
+        if opened:
+            working_indices.append(index)
+            consecutive_failures = 0
+        else:
+            consecutive_failures += 1
+            if consecutive_failures >= 2:
+                break
 
-        # Create readable label
-        camera_label = f"[{index + 1}] {camera_name}"
-        available_cameras.append(
-            {
-                "index": index,
-                "name": camera_name,
-                "label": camera_label
-            }
-        )
+    cv.utils.logging.setLogLevel(cv.utils.logging.LOG_LEVEL_WARNING)
 
-    return available_cameras
+    result = []
+    for i, index in enumerate(working_indices):
+        if i < len(devices):
+            device_id = devices[i]["device_id"]
+            device_name = devices[i]["name"]
+        else:
+            device_id = str(index)
+            device_name = f"Camera {index + 1}"
+
+        
+        result.append({
+            "index": index,
+            "name": device_name,
+            "device_id": device_id,
+            "label": f"[{len(result) + 1}] {device_name}"
+        })
+
+    return result

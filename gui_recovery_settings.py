@@ -41,7 +41,7 @@ from startup_recovery import (
 )
 from camera_tools import camera_can_capture
 from laser_control import LaserRelay
-from config import save_app_settings, load_app_settings
+from config import save_app_settings, load_app_settings, SETTLE_FRAMES
 
 # How often the background health check runs (camera/laser/storage).
 HEALTH_CHECK_INTERVAL_MS = 5000
@@ -400,7 +400,24 @@ class RecoverySettingsMixin:
 
         _btn(fr, "↻", _refresh_ports, "primary").pack(side=tk.LEFT)
 
-        
+        # ── Identify Cameras ──────────────────────────────────────────────────
+        fr_id = tk.Frame(win, bg=OFF_WHITE)
+        fr_id.pack(fill=tk.X, padx=28, pady=6)
+
+        tk.Label(fr_id,
+                 text="Camera Labels:",
+                 fg=TEXT_DARK,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 11),
+                 width=20,
+                 anchor="w").pack(side=tk.LEFT)
+
+        _btn(fr_id, "Identify Cameras…",
+             lambda: self._open_identify_cameras_window(win),
+             "secondary").pack(side=tk.LEFT)
+
+
+
         # ── Data root (read-only display) ─────────────────────────────────────
         fr3 = tk.Frame(win, bg=OFF_WHITE)
         fr3.pack(fill=tk.X, padx=28, pady=6)
@@ -542,6 +559,7 @@ class RecoverySettingsMixin:
              win.destroy,
              "secondary").pack(side=tk.LEFT)
 
+    
     def _get_laser_port_override(self): 
         """
         Returns the raw COM port string from the settings dropdown,
@@ -556,6 +574,107 @@ class RecoverySettingsMixin:
             return None
         # Value is formatted as "COM3 - Description", extract just the port
         return raw.split(" - ")[0].strip()
+
+    def _open_identify_cameras_window(self, parent_win):
+        """
+        Opens a window showing a captured frame from each camera index
+        so the user can identify and rename them.
+        """
+        import cv2 as cv
+        from PIL import Image, ImageTk
+
+        iwin = tk.Toplevel(parent_win)
+        iwin.title("Identify Cameras")
+        iwin.configure(bg=OFF_WHITE)
+        iwin.grab_set()
+
+        tk.Label(iwin,
+                 text="Loading camera previews…",
+                 fg=TEXT_MUTED,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 10)).pack(pady=20, padx=20)
+
+        iwin.update()
+
+        # Grab one frame from each working camera
+        cameras = self.available_cameras
+        frames = {}
+        for cam in cameras:
+            idx = cam["index"]
+            cap = cv.VideoCapture(idx, cv.CAP_MSMF)
+            if cap.isOpened():
+                for _ in range(SETTLE_FRAMES):
+                    cap.read()
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    frames[idx] = frame
+
+            cap.release()
+
+        # Clear loading label
+        for w in iwin.winfo_children():
+            w.destroy()
+
+        if not frames:
+            tk.Label(iwin,
+                     text="No cameras could be opened.",
+                     fg=DANGER,
+                     bg=OFF_WHITE,
+                     font=(FONT_BRAND, 10)).pack(pady=20, padx=20)
+            _btn(iwin, "Close", iwin.destroy, "secondary").pack(pady=8)
+            return
+
+        tk.Label(iwin,
+                 text="Identify your cameras by the preview below.",
+                 fg=TEXT_MUTED,
+                 bg=OFF_WHITE,
+                 font=(FONT_BRAND, 9)).pack(pady=(12, 4), padx=20)
+
+        frame_row = tk.Frame(iwin, bg=OFF_WHITE)
+        frame_row.pack(padx=20, pady=8)
+
+        THUMB_W, THUMB_H = 320, 200
+        self._camera_preview_images = []
+
+        for col, cam in enumerate(cameras):
+            idx = cam["index"]
+            col_frame = tk.Frame(frame_row, bg=OFF_WHITE)
+            col_frame.grid(row=0, column=col, padx=12)
+
+            if idx in frames:
+                img = frames[idx]
+                h, w = img.shape[:2]
+                scale = min(THUMB_W / w, THUMB_H / h)
+                nw, nh = int(w * scale), int(h * scale)
+                resized = cv.resize(img, (nw, nh))
+                rgb = cv.cvtColor(resized, cv.COLOR_BGR2RGB)
+                pil = Image.fromarray(rgb)
+                tkimg = ImageTk.PhotoImage(pil)
+                self._camera_preview_images.append(tkimg)
+                tk.Label(col_frame, image=tkimg, bg="#000000").pack()
+            else:
+                tk.Label(col_frame,
+                         text="Could not\ncapture frame",
+                         bg="#1a1a2e", fg=TEXT_MUTED,
+                         width=30, height=8,
+                         font=(FONT_BRAND, 9)).pack()
+
+            tk.Label(col_frame,
+                     text=f"Index {idx}",
+                     fg=TEXT_MUTED,
+                     bg=OFF_WHITE,
+                     font=(FONT_BRAND, 8)).pack(pady=(4, 2))
+
+            tk.Label(col_frame,
+                     text=cam["name"],
+                     font=(FONT_BRAND, 10),
+                     bg=OFF_WHITE,
+                     fg=TEXT_DARK).pack()
+
+        btn_row = tk.Frame(iwin, bg=OFF_WHITE)
+        btn_row.pack(pady=12)
+        _btn(btn_row, "Close", iwin.destroy, "secondary").pack()
+    
 
     def _save_settings(self, win):
         """

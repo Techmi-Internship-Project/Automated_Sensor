@@ -57,6 +57,7 @@ class SensorGUI(
             self.selected_camera = tk.StringVar()
             self.available_cameras       = []
             self.camera_label_to_index   = {}
+            self.camera_label_to_name    = {}
 
             self.duration_days    = tk.StringVar(value="0")
             self.duration_hours   = tk.StringVar(value="0")
@@ -108,6 +109,7 @@ class SensorGUI(
             # Live adjustment buttons list for enable/disable
             self._run_adjust_btns = []
             self._idle_only_widgets = []
+            self._end_after_next_requested = False
 
             # ttk style for progress bar
             self._style = ttk.Style()

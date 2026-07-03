@@ -109,7 +109,7 @@ def apply_camera_profile(cap, profile_name) :
     cap.set(cv.CAP_PROP_EXPOSURE, profile["exposure"])
     # Gain
     cap.set(cv.CAP_PROP_GAIN, profile["gain"])
-    # WB
+    
 
 
 

@@ -20,7 +20,8 @@ def run_experiment(
         status_callback=None,
         duration_callback=None,
         continue_with_prev_roi=True,
-        max_consecutive_failures=3
+        max_consecutive_failures=3,
+        end_after_next_capture_event=None
 ):
     """
     Run repeated measurements for specified amount of time
@@ -85,7 +86,7 @@ def run_experiment(
     finish_reason = "unknown"
     fatal_error_text = None
 
-    clean_finish_reasons = ["duration_reached", "user_stopped"]
+    clean_finish_reasons = ["duration_reached", "user_stopped", "end_after_capture"]
 
     try:
         while True:
@@ -102,7 +103,7 @@ def run_experiment(
             send_status(elapsed_seconds=elapsed_time, duration_seconds=current_duration)
 
             # Stop once duration reached
-            if elapsed_time >= duration_seconds:
+            if elapsed_time >= current_duration:
                 print("Experiment duration reached.")
                 finish_reason = "duration_reached"
                 send_status(state="finished", last_message="Experiment duration reached")
@@ -176,6 +177,13 @@ def run_experiment(
                     )
 
                     capture_number += 1
+
+                    if (end_after_next_capture_event is not None
+                            and end_after_next_capture_event.is_set()):
+                        finish_reason = "end_after_capture"
+                        send_status(state="finished",
+                                    last_message="Ending after capture as requested.")
+                        break
 
                 except RuntimeError as error:
                     error_text = str(error)

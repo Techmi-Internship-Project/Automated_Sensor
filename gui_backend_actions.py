@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from PIL import Image, ImageTk
 
-from gui_theme import format_elapsed
+from gui_theme import format_elapsed, WARNING
 from organism_menu import get_organism_options
 from camera_tools import scan_available_cameras
 from startup_recovery import (
@@ -47,12 +47,20 @@ class BackendActionsMixin:
             pass
 
     def load_available_cameras(self):
-            self.available_cameras    = scan_available_cameras()
-            self.camera_label_to_index = {}
-            for cam in self.available_cameras:
-                self.camera_label_to_index[cam["label"]] = cam["index"]
-
-    def refresh_camera_menu_on_open(self):
+        """
+        Loads available cameras and names
+        """
+        from config import load_app_settings
+        settings = load_app_settings()
+        self.available_cameras = scan_available_cameras()
+        self.camera_label_to_index = {}
+        self.camera_label_to_name  = {}
+        for cam in self.available_cameras:
+            self.camera_label_to_index[cam["label"]] = cam["index"]
+            self.camera_label_to_name[cam["label"]]  = cam.get("name")
+    
+    
+    def refresh_camera_menu(self):
             if self.controller.is_running:
                 return
             prev = self.selected_camera.get()
@@ -70,6 +78,10 @@ class BackendActionsMixin:
                 raise RuntimeError("No valid camera selected.")
             return self.camera_label_to_index[label]
 
+    def get_selected_camera_name(self):
+            label = self.selected_camera.get()
+            return self.camera_label_to_name.get(label)
+
     def start_experiment(self):
             organism = self.organism.get().strip()
             if not organism:
@@ -82,6 +94,7 @@ class BackendActionsMixin:
                 self.error_var.set("-")
 
                 cam_idx  = self.get_selected_camera_index()
+                cam_name = self.get_selected_camera_name()
                 duration = self.get_duration_seconds_from_inputs()
                 interval = self.get_interval_seconds_from_inputs()
                 if interval > duration:
@@ -93,6 +106,10 @@ class BackendActionsMixin:
                 return
 
             try:
+                # Release preview camera and laser relay so the experiment can open them
+                if self._preview_running or self._laser is not None:
+                    self._stop_preview()
+
                 # Read ArUco recovery settings (defaults used if never opened Settings).
                 continue_roi = getattr(self, "_continue_with_prev_roi_var",
                                        None)
@@ -101,6 +118,7 @@ class BackendActionsMixin:
                 run_id = self.controller.start_experiment(
                     microorganism_type=organism,
                     camera_index=cam_idx,
+                    camera_name=cam_name,
                     duration_seconds=duration,
                     interval_seconds=interval,
                     output_root=self.current_folder,
@@ -118,6 +136,14 @@ class BackendActionsMixin:
                     f"Experiment started. Run ID: {run_id}.", "gray")
             except RuntimeError as e:
                 messagebox.showerror("Error", str(e))
+
+    def _request_end_after_next(self):
+            if not self.controller.is_running:
+                return
+            self.controller.end_after_next_capture()
+            self._end_after_next_requested = True
+            self._end_after_next_btn.configure(text="✓ Queued", state="disabled")
+            self._append_log("Experiment will end after next capture.", "yellow")
 
     def stop_experiment(self):
             if not self.controller.is_running:
@@ -149,7 +175,9 @@ class BackendActionsMixin:
             if self._laser:
                 try:
                     self._laser.off()
+                    time.sleep(0.2)
                     self._laser.close()
+                    
                 except Exception:
                     pass
 
@@ -264,6 +292,22 @@ class BackendActionsMixin:
                     w.configure(state=adj_state)
                 except Exception:
                     pass
+
+            # End-after-next button (managed separately since it self-disables after click)
+            try:
+                if not running:
+                    self._end_after_next_requested = False
+                    self._end_after_next_btn.configure(
+                        text="End After Next",
+                        fg=WARNING,
+                        state="disabled"
+                    )
+                elif running and not stopping and not self._end_after_next_requested:
+                    self._end_after_next_btn.configure(state="normal")
+                else:
+                    self._end_after_next_btn.configure(state="disabled")
+            except Exception:
+                pass
 
             self.update_recovery_button_state()
 
