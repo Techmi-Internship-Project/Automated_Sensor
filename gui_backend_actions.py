@@ -260,6 +260,21 @@ class BackendActionsMixin:
             # Progress
             rem = max(0.0, duration - elapsed) if duration > 0 else 0.0
             time_pct = max(0.0, min(100.0, elapsed / duration * 100)) if duration > 0 else 0.0
+
+            # Update live status panel if live time changes
+            if self.controller.is_running and duration > 0:
+                try:
+                    interval = self.get_interval_seconds_from_inputs()
+                    self.estimated_capture_count = int(duration // interval) + 1
+                    finish_ts = time.time() + rem
+                    finish = time.strftime("%a %H:%M", time.localtime(finish_ts))
+                    self.estimated_finish_text.set(f"Est. finish: {finish}")
+
+                except ValueError:
+                    pass
+            else:
+                self.update_timing_estimates()
+
             capture_pct = max(0.0, min(100.0, captures / self.estimated_capture_count * 100)) if self.estimated_capture_count > 0 else 0.0
 
             self.progress_pct.set(capture_pct)
@@ -267,6 +282,7 @@ class BackendActionsMixin:
             self.elapsed.set(format_elapsed(elapsed))
             self.remaining.set(format_elapsed(rem))
 
+                
             self.capture_ratio.set(f"{captures} / {self.estimated_capture_count}")
 
             self.run_folder_var.set(str(run_folder) if run_folder else "-")

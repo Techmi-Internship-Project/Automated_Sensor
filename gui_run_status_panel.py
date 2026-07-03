@@ -105,7 +105,7 @@ class RunStatusLogMixin:
                 font=(FONT_BRAND, 9),
                 padx=6,
                 pady=2,
-                command=lambda d=delta: self.controller.adjust_time(d)
+                command=lambda d=delta: self.controller.adjust_time(d) 
             )
 
             b.pack(fill=tk.BOTH, expand=True)
