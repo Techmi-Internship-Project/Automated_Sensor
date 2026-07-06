@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import json
+import os
 
 def read_json_file(path) : 
     path = Path(path)
@@ -331,13 +332,23 @@ def wipe_folder_contents(folder_path) :
 
         return
     
+    def handle_error(func, path, exc_info) : 
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception: 
+            pass
+
     for item in folder_path.iterdir() : 
         if item.is_dir() : 
             # Delete the folder
-            shutil.rmtree(item)
+            shutil.rmtree(item, onexc=handle_error)
 
         else : 
-            # Delete the individual file
-            item.unlink()
+            try:
+                # Delete the individual file
+                item.unlink()
+            except Exception :
+                pass
 
 

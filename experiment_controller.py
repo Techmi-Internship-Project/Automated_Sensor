@@ -14,6 +14,7 @@ class ExperimentController :
         self.thread = None # Background experiment thread
         self.stop_event = threading.Event() # Event used to stop experiment
         self.hardware_error_event = threading.Event() # Event used to stop experiment if hardware error
+        self.csv_ready_event = threading.Event()
         self.hardware_error_message = None
         self.is_running = False
         self.last_error = None # Most recent error message
@@ -58,6 +59,9 @@ class ExperimentController :
             continue_with_prev_roi=True,
             max_consecutive_failures=3,
             laser_port=None,
+            standalone_mode=True,
+            retrain_model=False,
+            handshake_timeout_hours=1.0
     ):
         # Is experiment already running?
         if self.is_running : 
@@ -65,6 +69,7 @@ class ExperimentController :
         
         self.stop_event.clear() # Clear any previous stop request
         self.hardware_error_event.clear() # Clear any previous hardware error events
+        self.csv_ready_event.clear()
         self.hardware_error_message = None
         self.last_error = None
         self.last_run_folder = None
@@ -102,7 +107,11 @@ class ExperimentController :
             output_root,
             continue_with_prev_roi,
             max_consecutive_failures,
-            laser_port),
+            laser_port,
+            standalone_mode,
+            retrain_model,
+            handshake_timeout_hours,
+            self.csv_ready_event),
             daemon=True  # Thread closes automatically when main program exits
         )
 
@@ -125,6 +134,10 @@ class ExperimentController :
         continue_with_prev_roi,
         max_consecutive_failures,
         laser_port=None,
+        standalone_mode=True,
+        retrain_model=False,
+        handshake_timeout_hours=1.0,
+        csv_ready_event=None
 ):
         """
         Runs the experiment in a background thread.
@@ -168,6 +181,10 @@ class ExperimentController :
                 end_after_next_capture_event=self.end_after_current_capture_event,
                 hardware_error_event=self.hardware_error_event,
                 hardware_error_message_getter=lambda: self.hardware_error_message,
+                standalone_mode=standalone_mode,
+                retrain_model=retrain_model,
+                handshake_timeout_hours=handshake_timeout_hours,
+                csv_ready_event=csv_ready_event
             )
 
             # Check if the stop button was not requested.

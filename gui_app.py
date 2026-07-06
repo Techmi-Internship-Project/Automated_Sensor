@@ -91,6 +91,10 @@ class SensorGUI(
             self.stop_requested     = False
             self.camera_setup_open  = False
             self.last_summary_dest  = None
+            self._csv_uploaded = False
+            self._csv_uploaded_prompted = False
+            self._csv_upload_run_folder = None
+
 
             # Camera preview state
             self._preview_running   = False

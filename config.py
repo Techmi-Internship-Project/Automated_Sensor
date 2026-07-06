@@ -7,18 +7,29 @@ SETTLE_FRAMES = 10
 _SETTINGS_FILE = Path(__file__).parent / "app_settings.json"
 _DEFAULT_DATA_ROOT = Path(r"C:\Users\cadem\STEM\Internship Practice\OpenCV\Sensor\local")
 
+_SETTINGS_DEFAULTS = {
+    "standalone_mode": True,
+    "retrain_model": False,
+    "handshake_timeout_hours": 1.0
+}
+
 def load_app_settings() : 
     """
     Loads application settings from JSON file
     """
     if not _SETTINGS_FILE.exists() :
-        return {"data_root": str(_DEFAULT_DATA_ROOT)}
+        return {"data_root": str(_DEFAULT_DATA_ROOT), **_SETTINGS_DEFAULTS}
     try :
         with open(_SETTINGS_FILE, "r", encoding="utf-8") as file : 
-            return json.load(file)
+            loaded = json.load(file)
+
+        # Merge defaults so new keys are always present
+        merged = dict(_SETTINGS_DEFAULTS)
+        merged.update(loaded)
+        return merged
         
     except Exception: 
-        return {"data_root": _DEFAULT_DATA_ROOT}
+        return {"data_root": str(_DEFAULT_DATA_ROOT), **_SETTINGS_DEFAULTS}
     
 def save_app_settings(settings) : 
     """

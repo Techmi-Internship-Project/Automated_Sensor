@@ -5,7 +5,7 @@ from pathlib import Path
 
 from measurement_capture import capture_measurement
 from image_processing import make_filename
-from run_metadata import atomic_write_json, write_run_metadata, write_done_file
+from run_metadata import atomic_write_json, write_run_metadata, write_done_file, write_comms_file, read_comms_file
 
 
 def run_experiment(
@@ -24,6 +24,10 @@ def run_experiment(
         end_after_next_capture_event=None,
         hardware_error_event=None,
         hardware_error_message_getter=None,
+        standalone_mode=True,
+        retrain_model=False,
+        handshake_timeout_hours = 1.0,
+        csv_ready_event=None
 ):
     """
     Run repeated measurements for specified amount of time
@@ -71,8 +75,6 @@ def run_experiment(
 
     # Use monotonic time to see time elapsed
     start_time = time.monotonic()
-    next_capture_time = start_time
-    experiment_end_time = start_time + duration_seconds
 
     capture_number = 0
 
@@ -82,8 +84,34 @@ def run_experiment(
         run_id=run_id,
         duration_seconds=duration_seconds,
         interval_seconds=interval_seconds,
-        camera_index=0 # CHANGE LATER
+        camera_index=0, # CHANGE LATER
+        retrain_model=retrain_model,
     )
+
+
+
+    # Write comms file 
+    if not standalone_mode : 
+        write_comms_file(run_folder)
+        send_status(last_message="Waiting for partner handshake...")
+        ack_deadline = time.monotonic() + handshake_timeout_hours * 3600
+        wait_start = time.monotonic()
+
+        while True : 
+            comms = read_comms_file(run_folder)
+            if comms and comms.get("start_handshake") == "ack": 
+                send_status(last_message="Handshake acknowledged. Starting run")
+                break
+            if time.monotonic() > ack_deadline :
+                raise RuntimeError("Handshake timeout: partner machine did not respond")
+            if stop_event is not None and stop_event.is_set() : 
+                raise RuntimeError("Stopped during handshake wait")
+            time.sleep(5)
+
+    start_time = time.monotonic()
+    next_capture_time = start_time
+    experiment_end_time = start_time + duration_seconds
+
 
     finish_reason = "unknown"
     fatal_error_text = None
@@ -247,6 +275,37 @@ def run_experiment(
             send_status(last_message="Waiting for next capture...")
             time.sleep(0.1)
 
+        # Only write DONE.json if experiment if experiment finished successfully
+        if finish_reason in clean_finish_reasons : 
+            write_done_file(
+                run_folder=run_folder,
+                run_id=run_id,
+                capture_count=capture_number,
+                reason=finish_reason
+            )
+
+
+        if not standalone_mode and retrain_model and finish_reason in clean_finish_reasons : 
+            send_status(last_message="Experiment complete. Waiting for sensor CSV", state="awaiting_csv")
+
+            if csv_ready_event is not None :
+                csv_ready_event.wait()
+            
+            
+            send_status(last_message="Waiting for model retraining...", state="waiting_retrain")
+            retrain_deadline = time.monotonic() + handshake_timeout_hours * 3600
+            while True : 
+                comms = read_comms_file(run_folder)
+                if comms and comms.get("retraining_done") is True : 
+                    send_status(last_message="Retraining complete")
+                    break
+                if time.monotonic() > retrain_deadline : 
+                    send_status(last_message="Retraining wait timed out", last_message_category="yellow")
+                    break
+                if stop_event is not None and stop_event.is_set() :
+                    break
+                time.sleep(10)
+
     # Fatal capture, saving, camera, or relay failure
     except RuntimeError as error:
         fatal_error_text = str(error)
@@ -270,17 +329,6 @@ def run_experiment(
         )
 
     finally :
-        # Only write DONE.json if experiment if experiment finished successfully
-        if finish_reason in clean_finish_reasons : 
-            write_done_file(
-                run_folder=run_folder,
-                run_id=run_id,
-                capture_count=capture_number,
-                reason=finish_reason
-            )
-
-        
-
         if laser is not None :  # Just in case failure occurs
             try :
                 laser.off()

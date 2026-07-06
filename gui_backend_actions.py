@@ -16,6 +16,7 @@ from startup_recovery import (
     build_training_destination
 )
 from gui_camera_panel import FilledSliderInput
+from config import load_app_settings
 
 
 class BackendActionsMixin:
@@ -116,6 +117,8 @@ class BackendActionsMixin:
                                        None)
                 max_fails    = getattr(self, "_max_aruco_failures_var", None)
 
+                s = load_app_settings()
+
                 run_id = self.controller.start_experiment(
                     microorganism_type=organism,
                     camera_index=cam_idx,
@@ -126,6 +129,9 @@ class BackendActionsMixin:
                     continue_with_prev_roi=continue_roi.get() if continue_roi else True,
                     max_consecutive_failures=int(max_fails.get()) if max_fails else 3,
                     laser_port=self._get_laser_port_override(),
+                    standalone_mode=s.get("standalone_mode", True),
+                    retrain_model=s.get("retrain_model", False),
+                    handshake_timeout_hours=s.get("handshake_timeout_hours", 1.0)
                 )
                 self.run_id_var.set(str(run_id))
                 self.status.set("Running")
@@ -237,10 +243,24 @@ class BackendActionsMixin:
                 self._append_log(f"Error: {err}", "red")
                 self.controller.last_error = None
 
+            state = st.get("state")
+
+            if state == "awaiting_csv" and not getattr(self, "_csv_uploaded_prompted", False) :
+                self._csv_uploaded_prompted = True
+                self._csv_upload_run_folder = run_folder # Because this will get wiped in folder move
+                self._prompt_csv_upload(self._csv_upload_run_folder)
+
             # Move completed run
             if (not self.controller.is_running
                     and self.controller.last_run_folder is not None
                     and run_ok):
+                
+                s = load_app_settings()
+                standalone = s.get("standalone_mode",True)
+                retrain = s.get("retrain_model", False)
+
+                
+
                 done_folder = self.controller.last_run_folder
                 dest = build_training_destination(done_folder, self.training_folder)
                 ok = move_run_to_training(
@@ -258,7 +278,10 @@ class BackendActionsMixin:
                 self._active_log_path = None
                 wipe_folder_contents(self.current_folder)
 
-                
+                self._csv_uploaded = False  
+                self._csv_uploaded_prompted = False  
+
+
 
             self.update_control_states()
             self.update_recovery_panel()
@@ -311,6 +334,7 @@ class BackendActionsMixin:
             self.start_button.configure(state=start_state)
             self.stop_button.configure(state=stop_state)
 
+
             if running and not stopping:
                 self.status.set("Running")
             elif running and stopping:
@@ -357,4 +381,31 @@ class BackendActionsMixin:
                 pass
 
             self.update_recovery_button_state()
+
+    def _prompt_csv_upload(self, run_folder)  :
+        from tkinter import filedialog
+        import shutil
+
+        if run_folder is None : 
+            self._csv_uploaded_prompted = False
+            return 
+
+        csv_path = filedialog.askopenfilename(
+            title="Select Sensor Data CSV",
+            filetypes=[("CSV files", "*.csv")]
+        )
+
+        if not csv_path : 
+            self._csv_uploaded_prompted = False
+            return
+        
+        dest = Path(run_folder) / "sensor_data.csv"
+        try : 
+            shutil.copy2(csv_path, dest)
+            self._csv_uploaded = True
+            self.controller.csv_ready_event.set()
+            self._append_log("Sensor CSV uploaded. Waiting for model retraining...", "blue")
+        except Exception as e:
+            self._csv_uploaded_prompted = False # Allow retry
+            messagebox.showerror("CSV Upload Error", str(e))
 

@@ -89,7 +89,7 @@ class HoverTip:
             self.tip_window = None
 
 
-def _info_icon(parent, text):
+def _info_icon(parent, text, bg):
     """
     Creates a small hoverable info icon.
     """
@@ -98,7 +98,7 @@ def _info_icon(parent, text):
     icon = tk.Label(
         parent,
         text="ⓘ",
-        bg=CARD_BG,
+        bg=bg,
         fg=TEXT_MUTED,
         font=(FONT_BRAND, 9, "bold"),
         cursor="question_arrow"
@@ -730,7 +730,8 @@ class CameraPanelMixin:
 
         _info_icon(
             profile_label_row,
-            "Choose which saved camera profile is active. Normal is used for setup/preview. Low is used for laser capture."
+            "Choose which saved camera profile is active. Normal is used for setup/preview. Low is used for laser capture.",
+            bg=CARD_BG
         ).grid(row=0, column=1, sticky="e")
 
         # Profile buttons row.
@@ -803,7 +804,8 @@ class CameraPanelMixin:
 
         _info_icon(
             exposure_label_row,
-            "Camera exposure controls how long the sensor collects light. Lower values usually reduce brightness and motion blur."
+            "Camera exposure controls how long the sensor collects light. Lower values usually reduce brightness and motion blur.",
+            bg=CARD_BG
         ).grid(row=0, column=1, sticky="e")
 
         # Exposure slider with numeric input.
@@ -831,7 +833,8 @@ class CameraPanelMixin:
 
         _info_icon(
             gain_label_row,
-            "Camera gain digitally boosts brightness. Higher gain can make the image brighter but usually adds noise."
+            "Camera gain digitally boosts brightness. Higher gain can make the image brighter but usually adds noise.",
+            bg=CARD_BG
         ).grid(row=0, column=1, sticky="e")
 
         # Gain slider with numeric input.

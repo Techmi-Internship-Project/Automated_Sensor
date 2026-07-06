@@ -42,6 +42,7 @@ from startup_recovery import (
 from camera_tools import camera_can_capture
 from laser_control import LaserRelay
 from config import save_app_settings, load_app_settings, SETTLE_FRAMES
+from gui_camera_panel import _info_icon
 
 # How often the background health check runs (camera/laser/storage).
 HEALTH_CHECK_INTERVAL_MS = 5000
@@ -347,10 +348,17 @@ class RecoverySettingsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Settings")
-        win.geometry("800x600")
+        win.geometry("800x700")
         win.configure(bg=OFF_WHITE)
         win.resizable(False, False)
         win.grab_set()
+
+        if not hasattr(self,"_standalone_mode_var") : 
+            self._standalone_mode_var = tk.BooleanVar(value=load_app_settings().get("standalone_mode", True))
+        if not hasattr(self, "_retrain_model_var") :
+            self._retrain_model_var = tk.BooleanVar(value=load_app_settings().get("retrain_model", False))
+        if not hasattr(self, "_handshake_timeout_var") :
+            self._handshake_timeout_var = tk.StringVar(value=str(load_app_settings().get("handshake_timeout_hours", 1.0)))
 
         tk.Label(win,
                  text="Settings",
@@ -534,7 +542,67 @@ class RecoverySettingsMixin:
         # Set initial dropdown state to match the checkbox default.
         _toggle_aruco_dropdown()
 
+        def _toggle_collab_options()  :
+            # Retrain and timeout only make sense in collaborative mode
+            state = "disabled" if self._standalone_mode_var.get() else "normal"
+            retrain_chk.configure(state=state)
+            timeout_entry.configure(state=state)
+            timeout_label.configure(state=state)
 
+
+        # Standalone mode row with info icon
+        standalone_row = tk.Frame(win, bg=OFF_WHITE)
+        standalone_row.pack(fill=tk.X, padx=28, pady=(6, 2))
+        tk.Checkbutton(
+            standalone_row,
+            text="Standalone mode (no partner machine)",
+            variable=self._standalone_mode_var,
+            bg=OFF_WHITE, fg=TEXT_DARK, font=(FONT_BRAND, 11),
+            activebackground=OFF_WHITE,
+            command=_toggle_collab_options
+        ).pack(side=tk.LEFT)
+        _info_icon(
+            standalone_row,
+            "When enabled, the experiment runs without communicating with the\n"
+            "partner machine. No comms.json is written, no handshake is required,\n"
+            "and the run completes immediately. Use this for solo testing.",
+            bg=OFF_WHITE
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        # Retrain model row with info icon
+        retrain_row = tk.Frame(win, bg=OFF_WHITE)
+        retrain_row.pack(fill=tk.X, padx=28, pady=(0, 2))
+        retrain_chk = tk.Checkbutton(
+            retrain_row,
+            text="Retrain model after each run",
+            variable=self._retrain_model_var,
+            bg=OFF_WHITE, fg=TEXT_DARK, font=(FONT_BRAND, 11),
+            activebackground=OFF_WHITE
+        )
+        retrain_chk.pack(side=tk.LEFT)
+        _info_icon(
+            retrain_row,
+            "After the run completes, you will be prompted to upload a sensor\n"
+            "data CSV. The experiment will then wait for the partner machine to\n"
+            "finish retraining before the run is moved to training/.",
+            bg=OFF_WHITE
+        ).pack(side=tk.LEFT, padx=(6, 0))
+
+        timeout_frame = tk.Frame(win, bg=OFF_WHITE)
+        timeout_frame.pack(fill=tk.X, padx=28, pady=(0, 4))
+        timeout_label = tk.Label(timeout_frame, text="Handshake / retrain timeout (hours):",
+                 fg=TEXT_MUTED, bg=OFF_WHITE,
+                 font=(FONT_BRAND, 10))
+        timeout_label.pack(side=tk.LEFT, padx=(0, 8))
+        timeout_entry = tk.Entry(timeout_frame, textvariable=self._handshake_timeout_var,
+                 width=6, font=(FONT_BRAND, 10), relief="flat",
+                 bg="white", fg=TEXT_DARK, highlightthickness=1,
+                 highlightbackground=CARD_BORDER)
+        timeout_entry.pack(side=tk.LEFT)
+
+
+        
+        _toggle_collab_options()
 
         # ── Divider + action buttons ──────────────────────────────────────────
         tk.Frame(win, bg=CARD_BORDER, height=1).pack(fill=tk.X, padx=28, pady=16)
@@ -716,6 +784,19 @@ class RecoverySettingsMixin:
 
                     self._append_log(f"Data root changed to {new_root_str}.", "gray")
 
+        # Settings
+        settings = load_app_settings() 
+        settings["standalone_mode"] = self._standalone_mode_var.get()
+        settings["retrain_model"] = self._retrain_model_var.get()
+        try :
+            settings["handshake_timeout_hours"] = float(
+                getattr(self, "_handshake_timeout_var", tk.StringVar(value="1.0")).get())
+            
+        except ValueError :
+            settings["handshake_timeout_hours"] = 1.0
+        
+        save_app_settings(settings)
+        
         # LaserRelay will use the COM port on next open call
         win.destroy()
         self._append_log("Settings saved.", "gray")
