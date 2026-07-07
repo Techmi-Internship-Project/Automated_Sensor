@@ -141,6 +141,13 @@ class BackendActionsMixin:
                 self.update_control_states()
                 self._append_log(
                     f"Experiment started. Run ID: {run_id}.", "gray")
+            
+                # Start biomass polling if in collaborative mode
+                from config import load_app_settings as _las
+                if not _las().get("standalone_mode", True) : 
+                    self._start_comms_poll()
+
+
             except RuntimeError as e:
                 messagebox.showerror("Error", str(e))
 
@@ -166,6 +173,8 @@ class BackendActionsMixin:
 
     def confirm_exit(self):
             if not self.controller.is_running:
+                self._shutting_down = True
+                self._cancel_after_loops()
                 self._cleanup()
                 self.root.destroy()
                 return
@@ -174,8 +183,28 @@ class BackendActionsMixin:
                     "An experiment is running.\nStop it and exit?"):
                 return
             self.controller.stop_experiment()
+            self._shutting_down = True
+            self._cancel_after_loops()
             self._cleanup()
             self.root.after(600, self.root.destroy)
+
+    def _cancel_after_loops(self) :
+        for attr in ["_status_loop_after_id", "_health_check_after_id"] :
+            after_id = getattr(self, attr, None)
+            if after_id : 
+                try :
+                    self.root.after_cancel(after_id)
+                except Exception: 
+                    pass
+
+        # Close matplotlib figure
+        try:
+            import matplotlib.pyplot as plt
+            plt.close("all")
+        except Exception: 
+            pass
+
+
 
     def _cleanup(self):
             self._stop_preview()
@@ -208,7 +237,8 @@ class BackendActionsMixin:
                 print(f"Update status error: {e}")
 
             finally:
-                self.root.after(200, self.update_status_loop)
+                if not getattr(self, "_shutting_down", False) : 
+                    self._status_loop_after_id = self.root.after(200, self.update_status_loop)
 
     def _update_status_loop_body(self):
             st = self.controller.get_status()

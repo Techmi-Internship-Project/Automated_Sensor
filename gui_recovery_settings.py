@@ -26,6 +26,7 @@ from gui_theme import (
     DANGER,
     TEXT_DARK,
     TEXT_MUTED,
+    TECHMI_BLUE,
     format_elapsed,
     _btn,
     _card,
@@ -72,9 +73,10 @@ class RecoverySettingsMixin:
         # Place at the bottom of the right column (row 3)
         card.grid(row=row, column=0, sticky="nsew", pady=(0, 8))
 
-        # Two sub-columns inside the card: stats on left, health on right
+        # 3 sub-columns inside the card: stats on left, graph in middle, health on right
         c.grid_columnconfigure(0, weight=1)
-        c.grid_columnconfigure(1, weight=1)
+        c.grid_columnconfigure(1, weight=2)
+        c.grid_columnconfigure(2, weight=1)
 
         # ── Left: run statistics ──────────────────────────────────────────────
         stats = tk.Frame(c, bg=CARD_BG)
@@ -101,13 +103,55 @@ class RecoverySettingsMixin:
                 textvariable=var,
                 fg=SUCCESS if i == 0 else TEXT_DARK,
                 bg=CARD_BG,
-                font=(FONT_BRAND, 11)
+                font=(FONT_BRAND, 9),
+                wraplength=130,
+                anchor="w",
+                justify="left"
             ).grid(row=i * 2 + 1, column=0, sticky="w")
+
+        # ── Middle: Biomass graph + stage label ────────────────────────────────────
+        graph_col = tk.Frame(c, bg=CARD_BG)
+        graph_col.grid(row=0, column=1, sticky="nsew", padx=(0,8))
+        graph_col.grid_columnconfigure(0, weight=1)
+        graph_col.grid_rowconfigure(0, weight=0)
+        graph_col.grid_rowconfigure(1, weight=0)
+
+
+        # Store biomass data and stage
+        self._biomass_data = [] # List of (elapsed_hours, biomass)
+        self._current_state_var = tk.StringVar(value="-")
+        self._run_start_time = None # Set when run starts
+
+        from config import load_app_settings
+        import matplotlib
+        matplotlib.use("TkAgg")
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+        # Figure
+        self._bio_fig, self._bio_ax = plt.subplots(figsize=(2.8, 2.5))
+
+        self._bio_fig.patch.set_facecolor(CARD_BG)
+        self._bio_ax.set_facecolor("#f8fafc")
+        self._bio_ax.set_xlabel("Elapsed (h)", fontsize=7, color=TEXT_MUTED)
+        self._bio_ax.set_ylabel("Biomass", fontsize=7, color=TEXT_MUTED)
+        self._bio_ax.tick_params(labelsize=6, colors=TEXT_MUTED)
+
+        for spine in self._bio_ax.spines.values() : 
+            spine.set_edgecolor(CARD_BORDER)
+        self._bio_fig.tight_layout(pad=0.8) 
+
+        self._bio_canvas = FigureCanvasTkAgg(self._bio_fig, master=graph_col)
+        self._bio_canvas_widget = self._bio_canvas.get_tk_widget()
+        self._bio_canvas_widget.grid(row=0, column=0)
+        self._bio_canvas_widget.configure(width=280, height=150)
+
+        
 
         # ── Right: system health checklist ────────────────────────────────────
         # Stored on self so the health-check loop can recolor the whole box.
         self._health_box = tk.Frame(c, bg="#eef2ff")
-        self._health_box.grid(row=0, column=1, sticky="nsew")
+        self._health_box.grid(row=0, column=2, sticky="nsew")
         self._health_box.grid_columnconfigure(0, weight=1)
 
         self._health_title_lbl = tk.Label(
@@ -127,30 +171,146 @@ class RecoverySettingsMixin:
         for i, item in enumerate(HEALTH_ITEMS):
             row_frame = tk.Frame(self._health_box, bg="#eef2ff")
             row_frame.grid(row=i + 1, column=0, sticky="ew",
-                           padx=12, pady=(0, 4 if i < len(HEALTH_ITEMS) - 1 else 10))
+                        padx=12, pady=(0, 6 if i < len(HEALTH_ITEMS) - 1 else 10))
             self._health_row_frames[item] = row_frame
+
+            tk.Label(row_frame, text=f"{item}:",
+                    fg=TEXT_MUTED, bg="#eef2ff",
+                    font=(FONT_BRAND, 9), anchor="w").pack(anchor="w")
 
             v = tk.StringVar(value="…  Checking")
             self._health_vars[item] = v
 
-            tk.Label(row_frame,
-                     text=f"{item}:",
-                     fg=TEXT_MUTED,
-                     bg="#eef2ff",
-                     font=(FONT_BRAND, 10),
-                     width=14,
-                     anchor="w").pack(side=tk.LEFT)
-
-            value_lbl = tk.Label(row_frame,
-                                 textvariable=v,
-                                 fg=TEXT_MUTED,
-                                 bg="#eef2ff",
-                                 font=(FONT_BRAND, 10, "bold"))
-            value_lbl.pack(side=tk.LEFT)
+            value_lbl = tk.Label(row_frame, textvariable=v,
+                                fg=TEXT_MUTED, bg="#eef2ff",
+                                font=(FONT_BRAND, 9, "bold"), anchor="w")
+            value_lbl.pack(anchor="w")
             self._health_value_labels[item] = value_lbl
+
 
         # Health-state cache: None = unknown/checking, True/False once known.
         self._health_state = {item: None for item in HEALTH_ITEMS}
+
+    def _start_comms_poll(self) : 
+        """
+        Starts a 30-second comms.json polling loop.
+        Only reads when a run is active and not in standalone mode
+        """
+        self._biomass_data = []
+        self._run_start_time = time.monotonic()
+        
+        # Don't poll immediately — run folder doesn't exist yet
+    # First poll fires after 30 seconds
+        if not getattr(self, "_shutting_down", False):
+            self.root.after(30000, self._comms_poll)
+
+
+    def _comms_poll(self) : 
+        """
+        Reads comms.json every 30 seconds and updates graph + stage.
+        Reschedules itself while experiment is running
+        """
+        from config import load_app_settings
+        from run_metadata import read_comms_file
+        print("COMMS POLL CALLED") # DEBUG
+        s = load_app_settings()
+        standalone = s.get("standalone_mode", True)
+
+        if not standalone and self.controller.is_running : 
+            st = self.controller.get_status()
+            run_folder = st.get("run_folder")
+            
+            # Run folder not created safeguard
+            if run_folder is None : 
+                if self.controller.is_running : 
+                    self.root.after(5000, self._comms_poll)
+                return
+
+           
+            if run_folder : 
+                comms = read_comms_file(run_folder)
+                if comms :
+                    biomass = comms.get("current_biomass")
+                    state = comms.get("current_state")
+
+                    print(f"Biomass: {biomass} ---- State: {state}") # DEBUG
+
+                    if state is not None : 
+                        self._current_state_var.set(str(state).capitalize())
+                    else : 
+                        self._current_state_var.set("-")
+                        
+                    if biomass is not None : 
+                        elapsed_h = (time.monotonic() - self._run_start_time) / 3600
+                        self._biomass_data.append((elapsed_h, biomass))
+                        print("COMMS POLL CALLED") # DEBUG
+
+                        self._update_biomass_graph()
+                    elif state is not None : 
+                        self._update_biomass_graph() # State changed but biomass didn't update anyway
+                    
+
+
+        # Reschedule if still running
+        if self.controller.is_running and not getattr(self, "_shutting_down", False):
+            print("RESCHEDULE CALLED") # DEBUG
+            self.root.after(30000, self._comms_poll)
+
+
+
+    def _update_biomass_graph(self) : 
+        """
+        Redraws the matplot lib graph with current biomass data. 
+        """
+        from config import load_app_settings
+
+        s = load_app_settings()
+        standalone = s.get("standalone_mode", True)
+       
+        print(f"Update graph called, data points: {len(self._biomass_data)}") #DEBUG
+        self._bio_ax.clear()
+        self._bio_ax.set_facecolor("#f8fafc")
+
+
+        if standalone or not self._biomass_data : 
+            self._bio_ax.text(0.5, 0.5,
+                              "Standalone mode\n or awaiting data",
+                              ha="center", va="center",
+                              transform=self._bio_ax.transAxes,
+                              color=TEXT_MUTED, fontsize=7)
+            self._bio_ax.set_xticks([])
+            self._bio_ax.set_yticks([])
+            self._bio_ax.set_title(
+                f"Estimated Stage: -",
+                fontsize=8, color=TEXT_MUTED, pad=2,  fontweight="bold"
+            )
+
+
+        else : 
+            xs = [p[0] for p in self._biomass_data]
+            ys = [p[1] for p in self._biomass_data]
+
+            self._bio_ax.clear()
+            self._bio_ax.set_facecolor("#f8fafc")
+            self._bio_ax.plot(xs, ys, color=TECHMI_BLUE, linewidth=1.2,
+                            marker="o", markersize=3)
+            self._bio_ax.set_xlabel("Elapsed(h)", fontsize=7, color=TEXT_MUTED)
+            self._bio_ax.set_ylabel("Relative Biomasss", fontsize=7, color=TEXT_MUTED)
+            self._bio_ax.tick_params(labelsize=6, colors=TEXT_MUTED)
+            self._bio_ax.set_title(
+                f"Estimated Stage: {self._current_state_var.get()}",
+                fontsize=8, color=TEXT_MUTED, pad=2, fontweight="bold"
+            )
+
+        for spine in self._bio_ax.spines.values(): 
+            spine.set_edgecolor(CARD_BORDER)
+        
+        from matplotlib.ticker import MaxNLocator
+        self._bio_ax.xaxis.set_major_locator(MaxNLocator(nbins=4, prune="both"))
+
+        self._bio_fig.tight_layout(pad=0.8)
+        self._bio_canvas.draw()
+
 
     # ── System health checks ──────────────────────────────────────────────────
     def _init_health_system(self):
@@ -161,8 +321,11 @@ class RecoverySettingsMixin:
         """
         self._recovery_dirty = True
         self._prev_is_running = False
+        self._biomass_data = []
+        self._run_start_time = None
         self._run_health_check()
         self.update_recovery_panel()
+        self._update_biomass_graph()
 
     def _run_health_check(self):
         """
@@ -207,8 +370,10 @@ class RecoverySettingsMixin:
                     daemon=True
                 ).start()
 
+        
         # Reschedule.
-        self.root.after(HEALTH_CHECK_INTERVAL_MS, self._run_health_check)
+        if not getattr(self, "_shutting_down", False) :
+            self._health_check_after_id = self.root.after(HEALTH_CHECK_INTERVAL_MS, self._run_health_check)
 
     def _camera_health_worker(self, cam_idx):
         """
@@ -887,10 +1052,15 @@ class RecoverySettingsMixin:
         """
 
         has = current_folder_has_contents(self.current_folder)
-        state = "normal" if (has and not self.controller.is_running) \
-            else "disabled"
+        state = "normal" if (has and not self.controller.is_running) else "disabled"
+
         try:
             self.recovery_button.configure(state=state)
+            if state == "normal" : 
+                self.recovery_button.configure(bg=TECHMI_BLUE, fg="white", font=(FONT_BRAND, 10, "bold"))
+            else : 
+                self.recovery_button.configure(bg=CARD_BG, fg=TEXT_MUTED, font=(FONT_BRAND, 10, "normal"))
+                
         except Exception:
             pass
 

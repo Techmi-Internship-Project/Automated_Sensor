@@ -94,6 +94,9 @@ class SensorGUI(
             self._csv_uploaded = False
             self._csv_uploaded_prompted = False
             self._csv_upload_run_folder = None
+            self._shutting_down = False
+            self._status_loop_after_id = None
+            self._health_check_after_id = None
 
 
             # Camera preview state
@@ -105,6 +108,7 @@ class SensorGUI(
             self._laser             = None
             self._laser_on          = False
             self._logo_photo        = None
+
 
             # Camera settings state
             self.exposure_var       = tk.DoubleVar(value=-6)

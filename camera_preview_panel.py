@@ -93,7 +93,6 @@ class CameraPreviewPanel:
             padx=10, pady=4, cursor="hand2"
         )
         self.preview_btn.pack(side=tk.LEFT)
-        self._idle_only_widgets.append(self.preview_btn)
 
         # ArUco overlay toggle
         self.overlay_btn = tk.Button(

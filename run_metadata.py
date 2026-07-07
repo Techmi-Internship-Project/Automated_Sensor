@@ -80,7 +80,7 @@ def write_comms_file(run_folder) :
         "retraining_done": False,
         "current_state": None,
         "end_alert": False, # If has consecutively been in stationary or death stage
-        "currrent_biomass": None,
+        "current_biomass": None,
         "first_run": False, # Assume this is not the first run until proven otherwise
     }
 

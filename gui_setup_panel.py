@@ -109,7 +109,7 @@ class SetupPanelMixin:
             self._idle_only_widgets.append(self._refresh_cam_btn)
 
             # Handle Old Runs
-            self.recovery_button = _btn(c, "▭  Handle Old Runs",
+            self.recovery_button = _btn(c, "⎗  Handle Old Runs",
                                         self.open_recovery_window)
             self.recovery_button.grid(row=5, column=0, columnspan=2,
                                       sticky="ew", pady=(0, 0))
