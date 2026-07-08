@@ -90,6 +90,14 @@ class BackendActionsMixin:
                 messagebox.showerror("Error", "No organism selected.")
                 return
 
+            if current_folder_has_contents(self.current_folder):
+                messagebox.showerror(
+                    "Old Runs Detected",
+                    "There are files in the current folder from a previous run.\n\n"
+                    "Please press the \"Handle Old Runs\" button and handle them before starting a new run."
+                )
+                return
+
             try:
                 # Clear any error from previous experiment 
                 self.controller.last_error = None
