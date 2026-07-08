@@ -453,8 +453,12 @@ class CameraPanelMixin:
     def _toggle_preview(self):
             if not self._preview_running:
                 self._start_preview()
+                self._refresh_cam_btn.configure(state=tk.DISABLED)
+
             else:
                 self._stop_preview()
+                self._refresh_cam_btn.configure(state=tk.NORMAL)
+
 
     def _start_preview(self):
             """

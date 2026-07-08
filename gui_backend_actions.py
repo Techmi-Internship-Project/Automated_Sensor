@@ -386,6 +386,15 @@ class BackendActionsMixin:
                 except Exception:
                     pass
 
+            # Refresh camera button - Disabled during experiment or preview
+            try : 
+                preview = getattr(self, "_preview_running", False)
+                self._refresh_cam_btn.configure(
+                    state="disabled" if (running or preview) else "normal"
+                )
+            except Exception: 
+                pass
+
             # Live adjustment buttons
             adj_state = "normal" if (running and not stopping) else "disabled"
             for w in self._run_adjust_btns:
