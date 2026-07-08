@@ -27,7 +27,8 @@ def run_experiment(
         standalone_mode=True,
         retrain_model=False,
         handshake_timeout_hours = 1.0,
-        csv_ready_event=None
+        csv_ready_event=None,
+        csv_skipped_getter=None,
 ):
     """
     Run repeated measurements for specified amount of time
@@ -85,14 +86,13 @@ def run_experiment(
         duration_seconds=duration_seconds,
         interval_seconds=interval_seconds,
         camera_index=0, # CHANGE LATER
-        retrain_model=retrain_model,
     )
 
 
 
-    # Write comms file 
-    if not standalone_mode : 
-        write_comms_file(run_folder)
+    # Write comms file
+    if not standalone_mode :
+        write_comms_file(run_folder, retrain_model=retrain_model)
         send_status(last_message="Waiting for partner handshake...")
         ack_deadline = time.monotonic() + handshake_timeout_hours * 3600
         wait_start = time.monotonic()
@@ -291,15 +291,20 @@ def run_experiment(
             if csv_ready_event is not None :
                 csv_ready_event.wait()
             
+            # Check if user skipped CSV upload
+            if csv_skipped_getter is not None and csv_skipped_getter() : 
+                send_status(last_message="CSV upload skipped. Notifying partner machine...")
+            else :
+                send_status(last_message="Waiting for model retraining...", state="waiting_retrain")
             
-            send_status(last_message="Waiting for model retraining...", state="waiting_retrain")
-            retrain_deadline = time.monotonic() + handshake_timeout_hours * 3600
+            # Both outcomes wait for partner status 
+            ml_deadline = time.monotonic() + handshake_timeout_hours * 3600
             while True : 
                 comms = read_comms_file(run_folder)
-                if comms and comms.get("retraining_done") is True : 
+                if comms and comms.get("ml_done") is True : 
                     send_status(last_message="Retraining complete")
                     break
-                if time.monotonic() > retrain_deadline : 
+                if time.monotonic() > ml_deadline : 
                     send_status(last_message="Retraining wait timed out", last_message_category="yellow")
                     break
                 if stop_event is not None and stop_event.is_set() :

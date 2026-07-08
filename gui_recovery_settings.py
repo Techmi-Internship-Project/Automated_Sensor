@@ -190,6 +190,7 @@ class RecoverySettingsMixin:
 
         # Health-state cache: None = unknown/checking, True/False once known.
         self._health_state = {item: None for item in HEALTH_ITEMS}
+        self._camera_health_in_progress = False
 
     def _start_comms_poll(self) : 
         """
@@ -212,10 +213,10 @@ class RecoverySettingsMixin:
         """
         from config import load_app_settings
         from run_metadata import read_comms_file
-        print("COMMS POLL CALLED") # DEBUG
         s = load_app_settings()
         standalone = s.get("standalone_mode", True)
 
+        
         if not standalone and self.controller.is_running : 
             st = self.controller.get_status()
             run_folder = st.get("run_folder")
@@ -232,28 +233,29 @@ class RecoverySettingsMixin:
                 if comms :
                     biomass = comms.get("current_biomass")
                     state = comms.get("current_state")
+                    needs_redraw = False
 
-                    print(f"Biomass: {biomass} ---- State: {state}") # DEBUG
 
                     if state is not None : 
                         self._current_state_var.set(str(state).capitalize())
+                        needs_redraw = True
                     else : 
                         self._current_state_var.set("-")
                         
                     if biomass is not None : 
-                        elapsed_h = (time.monotonic() - self._run_start_time) / 3600
-                        self._biomass_data.append((elapsed_h, biomass))
-                        print("COMMS POLL CALLED") # DEBUG
-
-                        self._update_biomass_graph()
-                    elif state is not None : 
+                        last_biomass = self._biomass_data[-1][1] if self._biomass_data else None
+                        if biomass != last_biomass: # Only append if value changed
+                            elapsed_h = (time.monotonic() - self._run_start_time) / 3600
+                            self._biomass_data.append((elapsed_h, biomass))
+                            needs_redraw = True
+                    
+                    if needs_redraw: 
                         self._update_biomass_graph() # State changed but biomass didn't update anyway
                     
 
 
         # Reschedule if still running
         if self.controller.is_running and not getattr(self, "_shutting_down", False):
-            print("RESCHEDULE CALLED") # DEBUG
             self.root.after(30000, self._comms_poll)
 
 
@@ -267,7 +269,6 @@ class RecoverySettingsMixin:
         s = load_app_settings()
         standalone = s.get("standalone_mode", True)
        
-        print(f"Update graph called, data points: {len(self._biomass_data)}") #DEBUG
         self._bio_ax.clear()
         self._bio_ax.set_facecolor("#f8fafc")
 
@@ -358,12 +359,13 @@ class RecoverySettingsMixin:
         # ── Camera ───────────────────────────────────────────────────────────
         if self._preview_running or self.controller.is_running:
             self._apply_health_result("Camera", True)
-        else:
+        elif not self._camera_health_in_progress:
             try:
                 cam_idx = self.get_selected_camera_index()
             except RuntimeError:
                 self._apply_health_result("Camera", False)
             else:
+                self._camera_health_in_progress = True
                 threading.Thread(
                     target=self._camera_health_worker,
                     args=(cam_idx,),
@@ -384,7 +386,10 @@ class RecoverySettingsMixin:
             ok = camera_can_capture(cam_idx)
         except Exception:
             ok = False
-        self.root.after(0, lambda: self._apply_health_result("Camera", ok))
+        def _done():
+            self._camera_health_in_progress = False
+            self._apply_health_result("Camera", ok)
+        self.root.after(0, _done)
 
     def _apply_health_result(self, item, ok: bool):
         """

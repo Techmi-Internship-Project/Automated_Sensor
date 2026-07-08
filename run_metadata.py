@@ -30,7 +30,6 @@ def write_run_metadata(
         duration_seconds,
         interval_seconds,
         camera_index,
-        retrain_model=False,
 ):
     """
     Write information about setup
@@ -43,7 +42,6 @@ def write_run_metadata(
         "interval_seconds": interval_seconds,
         "camera_index": camera_index,
         "started_at": datetime.now().isoformat(),
-        "retrain_model": retrain_model,
     }
 
     atomic_write_json(Path(run_folder) / "run.json", data)
@@ -69,7 +67,7 @@ def write_done_file(
     atomic_write_json(Path(run_folder) / "DONE.json", data)
 
 
-def write_comms_file(run_folder) : 
+def write_comms_file(run_folder, retrain_model=False) :
     """
     Writes initial comms.json - This machine writes once at start
     Partner machine reads to know run has started, then takes over write
@@ -77,11 +75,12 @@ def write_comms_file(run_folder) :
 
     data = {
         "start_handshake": "sw", # Sensor write
-        "retraining_done": False,
+        "ml_done": False,
         "current_state": None,
         "end_alert": False, # If has consecutively been in stationary or death stage
         "current_biomass": None,
         "first_run": False, # Assume this is not the first run until proven otherwise
+        "retrain_model": retrain_model,
     }
 
     atomic_write_json(Path(run_folder) / "comms.json", data)
@@ -103,5 +102,22 @@ def read_comms_file(run_folder) :
         
     except Exception : 
         return None
+
+
+
+def write_end_handshake(run_folder) : 
+    """
+    Signals partner machine that this machine is done with run
+    and they should not do retraining as no csv file was uploaded.
+    """
+
+    path = Path(run_folder) / "comms.json"
+    try : 
+        with open(path, "r", encoding="utf-8") as f:
+            comms = json.load(f)
+    except Exception:
+        comms = {}
+
+    comms["end_handshake"]
     
 

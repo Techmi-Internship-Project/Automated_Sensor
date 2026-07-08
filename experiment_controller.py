@@ -15,6 +15,7 @@ class ExperimentController :
         self.stop_event = threading.Event() # Event used to stop experiment
         self.hardware_error_event = threading.Event() # Event used to stop experiment if hardware error
         self.csv_ready_event = threading.Event()
+        self.csv_skipped = False
         self.hardware_error_message = None
         self.is_running = False
         self.last_error = None # Most recent error message
@@ -48,7 +49,7 @@ class ExperimentController :
         }
         
 
-    def start_experiment(
+    def begin_run(
             self,
             microorganism_type,
             camera_index,
@@ -61,7 +62,8 @@ class ExperimentController :
             laser_port=None,
             standalone_mode=True,
             retrain_model=False,
-            handshake_timeout_hours=1.0
+            handshake_timeout_hours=1.0,
+            
     ):
         # Is experiment already running?
         if self.is_running : 
@@ -73,6 +75,7 @@ class ExperimentController :
         self.hardware_error_message = None
         self.last_error = None
         self.last_run_folder = None
+        self.csv_skipped = False
         self.camera_index = camera_index
 
         # Lock duration state before setting start duration 
@@ -184,7 +187,8 @@ class ExperimentController :
                 standalone_mode=standalone_mode,
                 retrain_model=retrain_model,
                 handshake_timeout_hours=handshake_timeout_hours,
-                csv_ready_event=csv_ready_event
+                csv_ready_event=csv_ready_event,
+                csv_skipped_getter=lambda: self.csv_skipped,
             )
 
             # Check if the stop button was not requested.

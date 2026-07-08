@@ -119,7 +119,11 @@ class BackendActionsMixin:
 
                 s = load_app_settings()
 
-                run_id = self.controller.start_experiment(
+                self._csv_uploaded = False
+                self._csv_uploaded_prompted = False
+                self._csv_upload_run_folder = None
+
+                run_id = self.controller.begin_run(
                     microorganism_type=organism,
                     camera_index=cam_idx,
                     camera_name=cam_name,
@@ -223,10 +227,9 @@ class BackendActionsMixin:
             # tick that fires while a popup is open spawns a new parallel loop, and
             # after a few seconds the canvas is being redrawn hundreds of times per
             # second, flooding the event queue and freezing the display.
-            try: 
+            try:
                 if self._status_loop_active:
-                    self.root.after(200, self.update_status_loop)
-                    return
+                    return  # outer finally still fires and reschedules — one callback, not two
                 self._status_loop_active = True
                 try:
                     self._update_status_loop_body()
@@ -287,9 +290,6 @@ class BackendActionsMixin:
                 
                 s = load_app_settings()
                 standalone = s.get("standalone_mode",True)
-                retrain = s.get("retrain_model", False)
-
-                
 
                 done_folder = self.controller.last_run_folder
                 dest = build_training_destination(done_folder, self.training_folder)
@@ -412,30 +412,91 @@ class BackendActionsMixin:
 
             self.update_recovery_button_state()
 
-    def _prompt_csv_upload(self, run_folder)  :
-        from tkinter import filedialog
+    def _prompt_csv_upload(self, run_folder):
         import shutil
 
-        if run_folder is None : 
-            self._csv_uploaded_prompted = False
-            return 
-
-        csv_path = filedialog.askopenfilename(
-            title="Select Sensor Data CSV",
-            filetypes=[("CSV files", "*.csv")]
-        )
-
-        if not csv_path : 
+        if run_folder is None:
             self._csv_uploaded_prompted = False
             return
-        
-        dest = Path(run_folder) / "sensor_data.csv"
-        try : 
-            shutil.copy2(csv_path, dest)
-            self._csv_uploaded = True
-            self.controller.csv_ready_event.set()
-            self._append_log("Sensor CSV uploaded. Waiting for model retraining...", "blue")
-        except Exception as e:
-            self._csv_uploaded_prompted = False # Allow retry
-            messagebox.showerror("CSV Upload Error", str(e))
 
+        win = tk.Toplevel(self.root)
+        win.title("Sensor Data Required")
+        win.geometry("560x320")
+        win.configure(bg="#f6f8fc")
+        win.resizable(False, False)
+        win.grab_set()
+        win.lift()
+        win.focus_force()
+
+        from gui_theme import NAVY, TEXT_MUTED, FONT_BRAND, DANGER, _btn
+
+        tk.Label(win, text="Upload Sensor Data CSV",
+                fg=NAVY, bg="#f6f8fc",
+                font=(FONT_BRAND, 13, "bold")).pack(pady=(24, 8))
+
+        tk.Label(win,
+                text="The model retraining requires the raw sensor data\n"
+                    "from this run's bioreactor readings.\n\n"
+                    "Select the CSV file exported from the sensor hardware\n"
+                    "to begin retraining. Without it, the model will not update.",
+                fg=TEXT_MUTED, bg="#f6f8fc",
+                font=(FONT_BRAND, 10),
+                justify="center").pack(pady=(0, 20))
+
+        btn_row = tk.Frame(win, bg="#f6f8fc")
+        btn_row.pack()
+
+        def _do_upload():
+            from tkinter import filedialog
+            csv_path = filedialog.askopenfilename(
+                parent=win,
+                title="Select Sensor Data CSV",
+                filetypes=[("CSV files", "*.csv")]
+            )
+            if not csv_path:
+                return  # user cancelled file picker, keep window open
+
+            dest = Path(run_folder) / "sensor_data.csv"
+            try:
+                shutil.copy2(csv_path, dest)
+                self._csv_uploaded = True
+                self.controller.csv_ready_event.set()
+                self._append_log("Sensor CSV uploaded. Waiting for model retraining...", "blue")
+                win.destroy()
+            except Exception as e:
+                from tkinter import messagebox
+                messagebox.showerror("Upload Error", str(e), parent=win)
+
+        def _skip():
+            """
+            How to behave when the user skips the CSV upload
+            """
+            from run_metadata import read_comms_file, atomic_write_json
+            import json
+
+            # Update comms.json to signal partner not to retain 
+            try:
+                comms_path = Path(run_folder) / "comms.json"
+                comms = read_comms_file(run_folder) or {}
+                comms["retrain_model"] = False 
+                atomic_write_json(comms_path, comms)
+                print("Written\n") # DEBUG
+
+            except Exception :
+                print("Passed")
+                pass
+
+            self._csv_uploaded = False
+            self.controller.csv_skipped = True
+            # Signal experiment thread to stop waiting
+            self.controller.csv_ready_event.set()
+            self._append_log("CSV upload skipped. Model will not be retrained.", "yellow")
+            
+            test = read_comms_file(run_folder)
+            test_retrain = test["retrain_model"]
+            print(f"retrain model: {test_retrain}\n") # DEBUG
+
+            win.destroy()
+
+        _btn(btn_row, "📂  Select CSV File", _do_upload, "primary").pack(side=tk.LEFT, padx=(0, 12))
+        _btn(btn_row, "Skip — End Run Without Retraining", _skip, "ghost").pack(side=tk.LEFT)
