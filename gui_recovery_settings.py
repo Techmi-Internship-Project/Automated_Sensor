@@ -762,7 +762,7 @@ class RecoverySettingsMixin:
 
         timeout_frame = tk.Frame(win, bg=OFF_WHITE)
         timeout_frame.pack(fill=tk.X, padx=28, pady=(0, 4))
-        timeout_label = tk.Label(timeout_frame, text="Handshake / retrain timeout (hours):",
+        timeout_label = tk.Label(timeout_frame, text="    Handshake / retrain timeout (hours):",
                  fg=TEXT_MUTED, bg=OFF_WHITE,
                  font=(FONT_BRAND, 10))
         timeout_label.pack(side=tk.LEFT, padx=(0, 8))

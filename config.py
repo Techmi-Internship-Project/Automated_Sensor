@@ -5,7 +5,7 @@ REQUIRED_MARKER_IDS = {0, 1, 2, 3}
 SETTLE_FRAMES = 10
 
 _SETTINGS_FILE = Path(__file__).parent / "app_settings.json"
-_DEFAULT_DATA_ROOT = Path(r"C:\Users\cadem\STEM\Internship Practice\OpenCV\Sensor\local")
+_DEFAULT_DATA_ROOT = None
 
 _SETTINGS_DEFAULTS = {
     "standalone_mode": True,
@@ -18,7 +18,7 @@ def load_app_settings() :
     Loads application settings from JSON file
     """
     if not _SETTINGS_FILE.exists() :
-        return {"data_root": str(_DEFAULT_DATA_ROOT), **_SETTINGS_DEFAULTS}
+        return {**_SETTINGS_DEFAULTS} # No default data root, need to get on cold install
     try :
         with open(_SETTINGS_FILE, "r", encoding="utf-8") as file : 
             loaded = json.load(file)
@@ -29,7 +29,7 @@ def load_app_settings() :
         return merged
         
     except Exception: 
-        return {"data_root": str(_DEFAULT_DATA_ROOT), **_SETTINGS_DEFAULTS}
+        return {**_SETTINGS_DEFAULTS}
     
 def save_app_settings(settings) : 
     """
@@ -37,10 +37,3 @@ def save_app_settings(settings) :
     """
     with open(_SETTINGS_FILE, "w", encoding="utf-8") as file :
         json.dump(settings, file, indent=4)
-
-
-# Loaded by rest of app
-
-DATA_ROOT = Path(load_app_settings()["data_root"])
-CURRENT_FOLDER = DATA_ROOT / "current" 
-TRAINING_FOLDER = DATA_ROOT / "training"

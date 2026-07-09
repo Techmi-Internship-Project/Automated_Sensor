@@ -38,11 +38,15 @@ class SensorGUI(
     live in separate mixin files to keep the code easier to maintain.
     """
 
-    def __init__(self, current_folder, training_folder):
+    def __init__(self, current_folder, training_folder, root=None):
             enable_windows_dpi_awareness()
-            self.root = tk.Tk()
+            if root is not None :
+                 self.root = root
+            else:
+                self.root = tk.Tk()
+
             self.root.title("TECHMI Bioreactor Sensor Control Panel")
-            self.root.geometry("1920x1080")
+            self.root.geometry("1920x1200")
             self.root.minsize(1100, 700)
             self.root.configure(bg=NAVY)
 

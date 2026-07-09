@@ -56,14 +56,14 @@ class TimingPanelMixin:
                 row=3, column=0, columnspan=3, sticky="w", pady=(0, 2))
 
             self.int_hrs_e = _entry(c, self.interval_hours)
-            self.int_hrs_e.grid(row=4, column=0, sticky="ew", padx=(0, 4))
+            self.int_hrs_e.grid(row=4, column=1, sticky="ew", padx=(0, 4))
             self.int_min_e = _entry(c, self.interval_minutes)
-            self.int_min_e.grid(row=4, column=1, sticky="ew", padx=4)
+            self.int_min_e.grid(row=4, column=2, sticky="ew", padx=4)
 
             for lbl, col in [("Hours", 0), ("Minutes", 1)]:
                 tk.Label(c, text=lbl, fg=TEXT_MUTED, bg=CARD_BG,
                          font=(FONT_BRAND, 7)).grid(
-                    row=5, column=col, pady=(0, 2))
+                    row=5, column=(col + 1), pady=(0, 2))
 
             self._idle_only_widgets += [self.int_hrs_e, self.int_min_e]
 
