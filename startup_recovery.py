@@ -2,6 +2,7 @@ from pathlib import Path
 import shutil
 import json
 import os
+import stat
 
 def read_json_file(path) : 
     path = Path(path)
@@ -47,7 +48,7 @@ def classify_run_folder(run_folder) :
     done_file = run_folder / "DONE.json"
     run_file = run_folder / "run.json"
 
-    image_files = list(run_folder.glob("*.png")) # All image files
+    image_files = list(run_folder.glob("*.jpg")) # All image files
 
     if done_file.exists() : 
         return "completed"
@@ -157,35 +158,37 @@ def current_folder_has_contents(current_folder="current") :
     return any(current_path.iterdir()) # Return whether the folder contains at least one item
 
 
-def move_valid_runs_to_training(current_folder="current", training_folder="training") : 
+def move_valid_runs_to_training(current_folder="current", training_folder="training"):
     """
-    Moves valid current/ runs into training/, valid runs have the status "completed" or "interrupted"
+    Moves runs with captured images from current/ to training/.
+    Only cleans up folders that were successfully moved.
+    Never wipes current/ wholesale.
     """
     existing_runs = find_existing_runs(current_folder=current_folder)
     moved_count = 0
     skipped_count = 0
 
-    for run_folder in existing_runs : 
-        # Classify run folder
-        run_state = classify_run_folder(run_folder)
+    for run_folder in existing_runs:
         image_count = len(list(run_folder.glob("*.jpg")))
 
-        # Check if should be moved
-        if run_state in ["completed", "interrupted"] and image_count > 0 : 
-            move_success = move_run_to_training(run_folder, training_folder=training_folder)
-            if move_success :
+        # Only move runs that actually have captured data
+        if image_count > 0:
+            move_success = move_run_to_training(
+                run_folder,
+                training_folder=training_folder,
+                current_folder=current_folder
+            )
+            if move_success:
                 moved_count += 1
-            else : 
+            else:
                 skipped_count += 1
-
-        else : 
-            # Runs that should not be moved
+        else:
             skipped_count += 1
 
-    wipe_folder_contents("current")
+    # Only clean up empty organism folders, never wipe current/ entirely
+    cleanup_empty_organism_folders(current_folder)
 
     return moved_count, skipped_count
-
 
 def cleanup_empty_organism_folders(current_folder="current") : 
     current_path = Path(current_folder)
@@ -204,83 +207,6 @@ def cleanup_empty_organism_folders(current_folder="current") :
         except OSError : 
             # Do nothing because non-empty folders stay
             pass 
-
-
-def handle_existing_runs_terminal(current_folder="current", training_folder="training") : 
-    """
-    LEGACY TERMINAL FUNCTION Check for old runs in current/ and ask the user what to do with them.
-    """
-
-    existing_runs = find_existing_runs(current_folder)
-    
-
-    if not existing_runs : 
-        return 
-    
-    print("\nExisting run folders found:\n")
-
-    for index, run_folder in enumerate(existing_runs) : 
-        state = classify_run_folder(run_folder)
-        image_count = len(list(run_folder.glob("*.jpg")))
-
-        metadata = get_run_metadata(run_folder)
-        organism_name = metadata["microorganism_type"] if metadata else "unknown"
-
-        run_id = metadata["run_id"] if metadata else "unknown"
-
-        print(
-            f"[{index}] {run_folder.name} | "
-            f"organism={organism_name} | "
-            f"run_id={run_id} | "
-            f"state={state} | "
-            f"images={image_count}"
-        )
-
-    # Menu
-    print("\nChoose what to do: ")
-    print("[1] Keep them")
-    print("[2] Delete them")
-    print("[3] Move completed/interrupted runs to training folder")
-
-    choice = input("Enter choice: ").strip()
-
-    if choice == "1" : 
-        print("Keep existing runs.")
-        return
-    
-    if choice == "2" : 
-        confirm = input("Confirm deletion? [y/n] :").strip()
-        
-        if confirm != "y" : 
-            print("Deletion cancelled")
-            return
-
-        for run_folder in existing_runs : 
-            shutil.rmtree(run_folder)
-            print(f"Deleted: {run_folder}")
-
-        
-        wipe_folder_contents(current_folder)
-
-        return
-    
-    if choice == "3" : 
-        
-        for run_folder in existing_runs : 
-            state = classify_run_folder(run_folder)
-            image_count = len(list(run_folder.glob("*.jpg")))
-            
-            if state in ["completed", "interrupted"] and image_count > 0 :
-                move_run_to_training(run_folder, training_folder, current_folder)
-
-                continue
-            print(f"Skipping {run_folder}: state={state}, images={image_count}")
-        
-        cleanup_empty_organism_folders(current_folder)
-
-        return
-    
-    print("Invalid choice. Keeping existing runs.")
 
 
 def find_last_run_info(current_folder="current", training_folder="training") :

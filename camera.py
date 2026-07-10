@@ -13,15 +13,13 @@ def open_camera(index):
 
 
 def set_normal_exposure(cap):
-    print("Normal settings applied")
     apply_camera_profile(cap, "normal")
 
 def set_low_exposure(cap):
-    print("Low exposure settings applied")
     apply_camera_profile(cap, "low")
 
-def grab_frame(cap, settleFrames = SETTLE_FRAMES):   # Settle time for camera
-    for i in range(settleFrames):
+def grab_frame(cap, settle_frames = SETTLE_FRAMES):   # Settle time for camera
+    for _ in range(settle_frames):
         cap.read()
 
     success,frame = cap.read()

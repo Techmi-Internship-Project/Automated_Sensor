@@ -147,8 +147,6 @@ def align_roi(image, roi_corners):
 
 
 
-
-
 # ==============================================================================
 # DEBUG IMAGE
 # ==============================================================================
@@ -159,6 +157,8 @@ def create_debug_image(image, corners, ids, roi_corners):
 
     This image is only used to verify that marker detection and ROI placement
     are working correctly.
+
+    Used during development to visually verify marker detection
     """
 
     debug = image.copy()

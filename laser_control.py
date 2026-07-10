@@ -49,8 +49,6 @@ class LaserRelay :
         if not self.ser.is_open : 
             raise RuntimeError("Could not open laser relay serial port")
         
-        print(f"Laser relay connected on {self.ser.name}")
-
         self.off()
 
     def on(self) : 
@@ -93,7 +91,6 @@ class LaserRelay :
         if self.ser is not None and self.ser.is_open : 
             try : 
                 self.off()
-                time.sleep(0.1)
+                time.sleep(0.1) # This is needed to give enough time to safely turn off and close the relay
             finally : 
                 self.ser.close()
-                print("Laser relay closed")

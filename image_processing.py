@@ -6,10 +6,12 @@ from datetime import datetime
 # with the timestamp in the format YYYYMMDD_HHMMSS
 
 def subtract_background(measurement, noise) : 
+    # Cast to int16 to avoid underflow
     noise = noise.astype(np.int16)
     measurement = measurement.astype(np.int16)
 
     result = measurement - noise
+    # Cast to int8 to return usable value
     result = np.clip(result, 0, 255).astype(np.uint8)
 
     return result

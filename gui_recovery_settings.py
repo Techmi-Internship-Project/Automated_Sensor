@@ -1032,9 +1032,8 @@ class RecoverySettingsMixin:
         win.destroy()
         messagebox.showinfo(
             "Recovery Complete",
-            f"Moved {moved} run(s).\nSkipped {skipped} invalid run(s).")
-        wipe_folder_contents(self.current_folder)
-        self._append_log(f"Recovery: moved {moved}, skipped {skipped}.", "gray")
+            f"Moved {moved} run(s)")
+        self._append_log(f"Recovery: moved {moved}", "gray")
 
     def _recovery_delete(self, win):
         """

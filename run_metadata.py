@@ -79,7 +79,7 @@ def write_comms_file(run_folder, retrain_model=False) :
         "current_state": None,
         "end_alert": False, # If has consecutively been in stationary or death stage
         "current_biomass": None,
-        "first_run": False, # Assume this is not the first run until proven otherwise
+        "first_run": False, # Assume this is not the first run until proven otherwise. Used by partner ML machine
         "retrain_model": retrain_model,
     }
 
@@ -103,21 +103,4 @@ def read_comms_file(run_folder) :
     except Exception : 
         return None
 
-
-
-def write_end_handshake(run_folder) : 
-    """
-    Signals partner machine that this machine is done with run
-    and they should not do retraining as no csv file was uploaded.
-    """
-
-    path = Path(run_folder) / "comms.json"
-    try : 
-        with open(path, "r", encoding="utf-8") as f:
-            comms = json.load(f)
-    except Exception:
-        comms = {}
-
-    comms["end_handshake"]
-    
 

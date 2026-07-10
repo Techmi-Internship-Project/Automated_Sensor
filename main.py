@@ -1,3 +1,4 @@
+from pathlib import Path
 from config import load_app_settings, save_app_settings
 
 
@@ -22,7 +23,6 @@ def prompt_data_root_if_needed(root):
     )
 
     if not chosen:
-        root.destroy()
         return False
 
     settings["data_root"] = chosen
@@ -47,9 +47,12 @@ def main():
     root.withdraw()  # hide until setup is done
 
     if not prompt_data_root_if_needed(root):
+        root.destroy()
         return
 
-    from pathlib import Path
+    
+    # Wait til after DPI setup to import heavy tkinter SensorGUI
+    # As well as root window is set
     from gui_app import SensorGUI
 
     s = load_app_settings()

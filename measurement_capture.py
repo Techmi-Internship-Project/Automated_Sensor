@@ -112,8 +112,8 @@ def capture_measurement(cap, laser, status_callback=None, fallback_roi=None):
             raise RuntimeError("ARUCO_NOT_FOUND: Could not detect all four ArUco markers")
 
     # Use low exposure for both measurement images.
-    set_low_exposure(cap)
     send_status(last_message="Setting low exposure...")
+    set_low_exposure(cap)
 
 
     try : 
@@ -146,6 +146,7 @@ def capture_measurement(cap, laser, status_callback=None, fallback_roi=None):
             send_status(last_message="Turning laser off...")
 
         except Exception as error : 
+            # More important error overwrites original error
             raise RuntimeError(f"RELAY_FAILURE: Could not turn laser off after measurement: {error}")
         
 

@@ -1,11 +1,9 @@
 from pathlib import Path
 import json
-ARUCO_DICTIONARY = 0  # replace with cv.aruco.DICT_4X4_50 in code
-REQUIRED_MARKER_IDS = {0, 1, 2, 3}
+
 SETTLE_FRAMES = 10
 
 _SETTINGS_FILE = Path(__file__).parent / "app_settings.json"
-_DEFAULT_DATA_ROOT = None
 
 _SETTINGS_DEFAULTS = {
     "standalone_mode": True,
@@ -29,6 +27,7 @@ def load_app_settings() :
         return merged
         
     except Exception: 
+        print(f"Warning: could not load app_settings.json ({e}). Using defaults.")
         return {**_SETTINGS_DEFAULTS}
     
 def save_app_settings(settings) : 
