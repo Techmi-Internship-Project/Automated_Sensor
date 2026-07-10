@@ -23,8 +23,8 @@ In collaborative mode, a partner machine running a biomass/current stage predict
 - **OS:** Windows 10/11 (required for MSMF camera backend and WMI device enumeration)
 - **Python:** 3.12+
 - **Camera:** USB camera compatible with Windows MSMF. Auto-exposure, auto-white-balance, and auto-focus must be disabled manually using Webcam Configuration Tool or similar software before running.
-- **Laser relay:** Silicon Labs CP210x USB relay module (AT command protocol)
-- **Storage:** Shared Google Drive folder (recommended) or local path. If computer has enough power both this control panel and the ML can be ran locally on the same computer for faster communication.
+- **Laser relay:** Silicon Labs CP210x USB-to-UART relay module (controlled via AT commands at 9600 baud)
+- **Storage:** Shared Google Drive folder (recommended) or local path. If computer has enough power, both this control panel and the ML can be ran locally on the same computer for faster communication.
 
 ---
 
