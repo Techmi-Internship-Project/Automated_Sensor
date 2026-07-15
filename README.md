@@ -14,7 +14,7 @@ The system captures time-series images of a bioreactor culture through a laser i
 4. Aligns the images and subtracts the background to isolate the laser signal
 5. Saves the processed image to the run folder
 
-In collaborative mode, a partner machine running a biomass/current stage prediction model reads the run folder from shared Google Drive, classifies the growth stage, and communicates estimated biomass and growth stage back through a shared `comms.json` file.
+In collaborative mode, a partner machine running a biomass/CFU/mL/current stage prediction model reads the run folder from shared Google Drive, classifies the growth stage, and communicates the estimated growth stage, biomass, and CFU/mL back through a shared `comms.json` file.
 
 ---
 
@@ -81,6 +81,7 @@ project/
 ├── run_metadata.py            # Write run.json, DONE.json, comms.json
 ├── startup_recovery.py        # Find, classify, move, and wipe run folders
 ├── organism_menu.py           # Organism folder discovery
+├── media_menu.py              # Media type option discovery/persistence (app_settings.json)
 │
 ├── gui_app.py                 # SensorGUI class — owns root window and shared state
 ├── gui_layout.py              # Top bar, sidebar, content area construction
@@ -88,7 +89,7 @@ project/
 ├── gui_camera_panel.py        # Camera preview, exposure sliders, ROI overlay
 ├── gui_recovery_settings.py   # Recovery panel, health checks, settings window, biomass graph
 ├── gui_run_status_panel.py    # Live status card, progress bar, log panel
-├── gui_setup_panel.py         # Organism and camera selection
+├── gui_setup_panel.py         # Organism, media type, and camera selection
 ├── gui_timing_panel.py        # Duration/interval inputs and presets
 ├── gui_theme.py               # Colors, fonts, shared widget factories
 │
@@ -107,7 +108,7 @@ data_root/
 ├── current/
 │   └── organism_name/
 │       └── run_TIMESTAMP/
-│           ├── run.json          # Run metadata (organism, duration, interval, camera)
+│           ├── run.json          # Run metadata (organism, media type, duration, interval, camera)
 │           ├── comms.json        # Two-machine handshake and live ML data (collaborative mode)
 │           ├── DONE.json         # Written on clean finish
 │           ├── run.log           # GUI log for this run
@@ -131,6 +132,7 @@ Settings are stored in `app_settings.json` in the project directory.
 | `standalone_mode` | bool | `true` | When true, skips all collaborative handshake logic |
 | `retrain_model` | bool | `false` | When true, prompts for CSV upload and waits for ML retraining after each run |
 | `handshake_timeout_hours` | float | `1.0` | How long to wait for partner machine responses before timing out. Supports decimals (e.g. `0.1` = 6 minutes) |
+| `known_media_types` | list of strings | `[]` | Media types previously entered via "Create New Media Type", offered again in the Setup panel dropdown. Unlike organisms, media types have no folder of their own — this list is their only persistence |
 
 Camera settings are stored separately in `camera_settings.json`:
 
@@ -195,7 +197,11 @@ move run folder to training/
 | `retrain_model` | Sensor machine | Whether the ML machine should retrain after this run |
 | `current_state` | ML machine | Current growth stage (e.g. `"lag"`, `"exponential"`) |
 | `current_biomass` | ML machine | Estimated biomass value for live graph |
-| `end_alert` | ML machine | True if organism has been in stationary/death stage for consecutive reads |
+| `current_cfu_ml` | ML machine | Estimated CFU/mL value for live graph. Shown alongside biomass in the Recovery panel; a toggle switches which of the two drives the trend graph, since the two live on very different scales |
+| `end_alert` | ML machine | True if organism has been in stationary/death stage for consecutive reads. When it flips true, the Recovery panel raises a one-time GUI warning to consider ending the run. |
+| `first_run` | ML machine | ML-internal flag: set true when the ML has no usable training data yet. Written by the sensor as `false` and not otherwise read on the sensor side. |
+
+> Note: `automated_run` is read by the ML machine (defaulting to automated when absent) but is **not** currently written by the sensor — automated mode is the only supported mode until the sensor-side setting is implemented.
 
 ---
 

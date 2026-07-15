@@ -18,6 +18,7 @@ from gui_theme import (
     _section_label,
 )
 from organism_menu import get_organism_options
+from media_menu import get_media_type_options
 
 
 class SetupPanelMixin:
@@ -76,8 +77,51 @@ class SetupPanelMixin:
                                           sticky="ew", pady=(0, 6))
             self._idle_only_widgets.append(self.create_organism_btn)
 
+            # Media Type
+            _section_label(c, "Media Type").grid(row=3, column=0, columnspan=2,
+                                                  sticky="w", pady=(0, 4))
+
+            self._media_type_options = get_media_type_options()
+            if self._media_type_options:
+                self.media_type.set(self._media_type_options[0])
+            else:
+                self.media_type.set("")
+
+            self.media_type_var_frame = tk.Frame(c, bg=CARD_BG,
+                                                 highlightthickness=1,
+                                                 highlightbackground=CARD_BORDER)
+            self.media_type_var_frame.grid(row=4, column=0, columnspan=2,
+                                           sticky="ew", pady=(0, 6))
+            self.media_type_var_frame.grid_columnconfigure(0, weight=1)
+
+            self._media_display = tk.Label(
+                self.media_type_var_frame,
+                textvariable=self.media_type,
+                bg="white", fg=TEXT_DARK,
+                font=(FONT_BRAND, 9),
+                anchor="w", padx=10, pady=6
+            )
+            self._media_display.grid(row=0, column=0, sticky="ew")
+
+            self._media_arrow = tk.Label(
+                self.media_type_var_frame, text="▾",
+                bg="white", fg=TEXT_MUTED,
+                font=(FONT_BRAND, 9), padx=8
+            )
+            self._media_arrow.grid(row=0, column=1)
+
+            # Bind click to show menu
+            for w in (self._media_display, self._media_arrow, self.media_type_var_frame):
+                w.bind("<Button-1>", self._show_media_type_menu)
+
+            self.create_media_type_btn = _btn(c, "+  Create New Media Type",
+                                              self.create_new_media_type)
+            self.create_media_type_btn.grid(row=5, column=0, columnspan=2,
+                                            sticky="ew", pady=(0, 6))
+            self._idle_only_widgets.append(self.create_media_type_btn)
+
             # Camera
-            _section_label(c, "Camera").grid(row=3, column=0, columnspan=2,
+            _section_label(c, "Camera").grid(row=6, column=0, columnspan=2,
                                              sticky="w", pady=(0, 2))
 
             self.load_available_cameras()
@@ -90,7 +134,7 @@ class SetupPanelMixin:
 
             self._cam_fr = tk.Frame(c, bg=CARD_BG, highlightthickness=1,
                               highlightbackground=CARD_BORDER)
-            self._cam_fr.grid(row=4, column=0, sticky="ew", pady=(0, 6), padx=(0, 6))
+            self._cam_fr.grid(row=7, column=0, sticky="ew", pady=(0, 6), padx=(0, 6))
             self._cam_fr.grid_columnconfigure(0, weight=1)
             self._cam_display = tk.Label(self._cam_fr, textvariable=self.selected_camera,
                                          bg="white", fg=TEXT_DARK,
@@ -105,13 +149,13 @@ class SetupPanelMixin:
 
             self._refresh_cam_btn = _btn(c, "↻", self.refresh_camera_menu,
                                          kind="ghost")
-            self._refresh_cam_btn.grid(row=4, column=1, sticky="ew", pady=(0, 6))
+            self._refresh_cam_btn.grid(row=7, column=1, sticky="ew", pady=(0, 6))
             self._idle_only_widgets.append(self._refresh_cam_btn)
 
             # Handle Old Runs
             self.recovery_button = _btn(c, "⎗  Handle Old Runs",
                                         self.open_recovery_window)
-            self.recovery_button.grid(row=5, column=0, columnspan=2,
+            self.recovery_button.grid(row=8, column=0, columnspan=2,
                                       sticky="ew", pady=(0, 0))
             self._idle_only_widgets.append(self.recovery_button)
 
@@ -134,6 +178,28 @@ class SetupPanelMixin:
                 menu.tk_popup(self._org_display.winfo_rootx(),
                               self._org_display.winfo_rooty() +
                               self._org_display.winfo_height())
+            finally:
+                menu.grab_release()
+
+    def _show_media_type_menu(self, event=None):
+            if self.controller.is_running:
+                return
+            menu = tk.Menu(self.root, tearoff=0,
+                           font=(FONT_BRAND, 9),
+                           bg="white", fg=TEXT_DARK,
+                           activebackground=TECHMI_BLUE,
+                           activeforeground="white",
+                           relief="flat", bd=1)
+            opts = get_media_type_options()
+            if not opts:
+                menu.add_command(label="(no media types)", state="disabled")
+            for o in opts:
+                menu.add_command(label=o,
+                                 command=lambda v=o: self.media_type.set(v))
+            try:
+                menu.tk_popup(self._media_display.winfo_rootx(),
+                              self._media_display.winfo_rooty() +
+                              self._media_display.winfo_height())
             finally:
                 menu.grab_release()
 

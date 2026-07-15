@@ -83,14 +83,35 @@ class LaserRelay :
         except Exception as error :
             raise RuntimeError(f"Laser relay OFF command failed: {error}") 
 
-    def close(self) : 
+    def reconnect(self) :
+        """
+        Close (if open) and re-open the serial connection to the relay.
+
+        Used to recover from a transient USB/serial glitch on a long run so a
+        single momentary fault doesn't abort the whole experiment. Re-detects
+        the port via open() when no fixed port was configured. Raises
+        RuntimeError if the relay still can't be opened.
+        """
+
+        if self.ser is not None :
+            try :
+                self.ser.close()
+            except Exception :
+                pass
+            finally :
+                self.ser = None
+
+        # open() re-detects the port and raises RuntimeError on failure.
+        self.open()
+
+    def close(self) :
         """
         Turn laser off and close serial connection
         """
 
-        if self.ser is not None and self.ser.is_open : 
-            try : 
+        if self.ser is not None and self.ser.is_open :
+            try :
                 self.off()
                 time.sleep(0.1) # This is needed to give enough time to safely turn off and close the relay
-            finally : 
+            finally :
                 self.ser.close()

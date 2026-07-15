@@ -117,9 +117,13 @@ class RecoverySettingsMixin:
         graph_col.grid_rowconfigure(1, weight=0)
 
 
-        # Store biomass data and stage
+        # Store biomass/CFU data and stage
         self._biomass_data = [] # List of (elapsed_hours, biomass)
+        self._cfu_data = []     # List of (elapsed_hours, cfu_ml)
+        self._graph_metric = "biomass"  # Which metric currently drives the trend graph
         self._current_state_var = tk.StringVar(value="-")
+        self._current_biomass_var = tk.StringVar(value="Biomass: —")
+        self._current_cfu_var = tk.StringVar(value="CFU/mL: —")
         self._run_start_time = None # Set when run starts
 
         from config import load_app_settings
@@ -146,7 +150,31 @@ class RecoverySettingsMixin:
         self._bio_canvas_widget.grid(row=0, column=0)
         self._bio_canvas_widget.configure(width=280, height=150)
 
-        
+        # Toggle row: two clickable "tabs" showing each metric's latest value.
+        # Clicking one switches which metric drives the trend graph above —
+        # biomass (g/L) and CFU/mL live on very different scales, so plotting
+        # both on one shared axis would be unreadable in this small a space.
+        toggle_row = tk.Frame(graph_col, bg=CARD_BG)
+        toggle_row.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        toggle_row.grid_columnconfigure((0, 1), weight=1)
+
+        self._biomass_tab = tk.Label(
+            toggle_row, textvariable=self._current_biomass_var,
+            bg=TECHMI_BLUE, fg="white",
+            font=(FONT_BRAND, 8, "bold"),
+            padx=6, pady=3, cursor="hand2"
+        )
+        self._biomass_tab.grid(row=0, column=0, sticky="ew", padx=(0, 2))
+        self._biomass_tab.bind("<Button-1>", lambda e: self._set_graph_metric("biomass"))
+
+        self._cfu_tab = tk.Label(
+            toggle_row, textvariable=self._current_cfu_var,
+            bg="#eef2ff", fg=TEXT_MUTED,
+            font=(FONT_BRAND, 8, "bold"),
+            padx=6, pady=3, cursor="hand2"
+        )
+        self._cfu_tab.grid(row=0, column=1, sticky="ew", padx=(2, 0))
+        self._cfu_tab.bind("<Button-1>", lambda e: self._set_graph_metric("cfu_ml"))
 
         # ── Right: system health checklist ────────────────────────────────────
         # Stored on self so the health-check loop can recolor the whole box.
@@ -198,8 +226,10 @@ class RecoverySettingsMixin:
         Only reads when a run is active and not in standalone mode
         """
         self._biomass_data = []
+        self._cfu_data = []
         self._run_start_time = time.monotonic()
-        
+        self._end_alert_shown = False  # Latch so the end_alert popup fires once per run
+
         # Don't poll immediately — run folder doesn't exist yet
     # First poll fires after 30 seconds
         if not getattr(self, "_shutting_down", False):
@@ -232,26 +262,58 @@ class RecoverySettingsMixin:
                 comms = read_comms_file(run_folder)
                 if comms :
                     biomass = comms.get("current_biomass")
+                    cfu_ml = comms.get("current_cfu_ml")
                     state = comms.get("current_state")
                     needs_redraw = False
 
 
-                    if state is not None : 
+                    if state is not None :
                         self._current_state_var.set(str(state).capitalize())
                         needs_redraw = True
-                    else : 
+                    else :
                         self._current_state_var.set("-")
-                        
-                    if biomass is not None : 
+
+                    if biomass is not None :
+                        self._current_biomass_var.set(f"Biomass: {biomass:.3g}")
                         last_biomass = self._biomass_data[-1][1] if self._biomass_data else None
                         if biomass != last_biomass: # Only append if value changed
                             elapsed_h = (time.monotonic() - self._run_start_time) / 3600
                             self._biomass_data.append((elapsed_h, biomass))
                             needs_redraw = True
-                    
-                    if needs_redraw: 
+                    else :
+                        self._current_biomass_var.set("Biomass: —")
+
+                    if cfu_ml is not None :
+                        self._current_cfu_var.set(f"CFU/mL: {cfu_ml:.3g}")
+                        last_cfu = self._cfu_data[-1][1] if self._cfu_data else None
+                        if cfu_ml != last_cfu: # Only append if value changed
+                            elapsed_h = (time.monotonic() - self._run_start_time) / 3600
+                            self._cfu_data.append((elapsed_h, cfu_ml))
+                            needs_redraw = True
+                    else :
+                        self._current_cfu_var.set("CFU/mL: —")
+
+                    if needs_redraw:
                         self._update_biomass_graph() # State changed but biomass didn't update anyway
-                    
+
+                    # Partner ML sets end_alert once the culture has been in
+                    # stationary/death for consecutive reads. Surface it once as a
+                    # GUI warning (via the controller alert path, which the status
+                    # poll loop turns into a popup) so the operator can act on it.
+                    if comms.get("end_alert") and not getattr(self, "_end_alert_shown", False):
+                        self._end_alert_shown = True
+                        self.controller.update_status(
+                            last_message="END ALERT: partner detected sustained stationary/death phase.",
+                            last_message_category="red",
+                            alert_message=(
+                                "END ALERT\n\n"
+                                "The analysis machine reports the culture has been in a "
+                                "stationary/death phase for consecutive readings.\n\n"
+                                "Consider ending the run and turning the bioreactor off."
+                            ),
+                        )
+
+
 
 
         # Reschedule if still running
@@ -260,20 +322,44 @@ class RecoverySettingsMixin:
 
 
 
-    def _update_biomass_graph(self) : 
+    def _set_graph_metric(self, metric) :
         """
-        Redraws the matplot lib graph with current biomass data. 
+        Switches which metric (biomass or cfu_ml) drives the trend graph and
+        highlights the active tab. The two live on very different scales
+        (g/L vs. a raw cell count), so only one is ever plotted at a time.
+        """
+        if metric == self._graph_metric :
+            return
+        self._graph_metric = metric
+        self._biomass_tab.configure(
+            bg=TECHMI_BLUE if metric == "biomass" else "#eef2ff",
+            fg="white" if metric == "biomass" else TEXT_MUTED,
+        )
+        self._cfu_tab.configure(
+            bg=TECHMI_BLUE if metric == "cfu_ml" else "#eef2ff",
+            fg="white" if metric == "cfu_ml" else TEXT_MUTED,
+        )
+        self._update_biomass_graph()
+
+    def _update_biomass_graph(self) :
+        """
+        Redraws the matplotlib graph with the currently selected metric's data
+        (biomass or CFU/mL — see _set_graph_metric).
         """
         from config import load_app_settings
 
         s = load_app_settings()
         standalone = s.get("standalone_mode", True)
-       
+
+        metric = getattr(self, "_graph_metric", "biomass")
+        data = self._biomass_data if metric == "biomass" else self._cfu_data
+        metric_label = "Biomass" if metric == "biomass" else "CFU/mL"
+
         self._bio_ax.clear()
         self._bio_ax.set_facecolor("#f8fafc")
 
 
-        if standalone or not self._biomass_data : 
+        if standalone or not data :
             self._bio_ax.text(0.5, 0.5,
                               "Standalone mode\n or awaiting data",
                               ha="center", va="center",
@@ -287,25 +373,25 @@ class RecoverySettingsMixin:
             )
 
 
-        else : 
-            xs = [p[0] for p in self._biomass_data]
-            ys = [p[1] for p in self._biomass_data]
+        else :
+            xs = [p[0] for p in data]
+            ys = [p[1] for p in data]
 
             self._bio_ax.clear()
             self._bio_ax.set_facecolor("#f8fafc")
             self._bio_ax.plot(xs, ys, color=TECHMI_BLUE, linewidth=1.2,
                             marker="o", markersize=3)
             self._bio_ax.set_xlabel("Elapsed(h)", fontsize=7, color=TEXT_MUTED)
-            self._bio_ax.set_ylabel("Relative Biomasss", fontsize=7, color=TEXT_MUTED)
+            self._bio_ax.set_ylabel(metric_label, fontsize=7, color=TEXT_MUTED)
             self._bio_ax.tick_params(labelsize=6, colors=TEXT_MUTED)
             self._bio_ax.set_title(
                 f"Estimated Stage: {self._current_state_var.get()}",
                 fontsize=8, color=TEXT_MUTED, pad=2, fontweight="bold"
             )
 
-        for spine in self._bio_ax.spines.values(): 
+        for spine in self._bio_ax.spines.values():
             spine.set_edgecolor(CARD_BORDER)
-        
+
         from matplotlib.ticker import MaxNLocator
         self._bio_ax.xaxis.set_major_locator(MaxNLocator(nbins=4, prune="both"))
 
@@ -323,6 +409,7 @@ class RecoverySettingsMixin:
         self._recovery_dirty = True
         self._prev_is_running = False
         self._biomass_data = []
+        self._cfu_data = []
         self._run_start_time = None
         self._run_health_check()
         self.update_recovery_panel()

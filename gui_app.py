@@ -59,6 +59,7 @@ class SensorGUI(
 
             # ── StringVars ────────────────────────────────────────────────────────
             self.organism        = tk.StringVar()
+            self.media_type      = tk.StringVar()
             self.selected_camera = tk.StringVar()
             self.available_cameras       = []
             self.camera_label_to_index   = {}

@@ -26,6 +26,7 @@ def atomic_write_json(path, data):
 def write_run_metadata(
         run_folder,
         microorganism_type,
+        media_type,
         run_id,
         duration_seconds,
         interval_seconds,
@@ -33,11 +34,15 @@ def write_run_metadata(
 ):
     """
     Write information about setup
+
+    media_type is read by the partner ML machine as a categorical feature
+    alongside microorganism_type (falls back to 'unknown' there if absent).
     """
 
     data = {
         "run_id": run_id,
         "microorganism_type": microorganism_type,
+        "media_type": media_type,
         "duration_seconds": duration_seconds,
         "interval_seconds": interval_seconds,
         "camera_index": camera_index,
@@ -79,6 +84,7 @@ def write_comms_file(run_folder, retrain_model=False) :
         "current_state": None,
         "end_alert": False, # If has consecutively been in stationary or death stage
         "current_biomass": None,
+        "current_cfu_ml": None,
         "first_run": False, # Assume this is not the first run until proven otherwise. Used by partner ML machine
         "retrain_model": retrain_model,
     }

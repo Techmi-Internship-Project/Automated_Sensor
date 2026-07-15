@@ -8,7 +8,8 @@ _SETTINGS_FILE = Path(__file__).parent / "app_settings.json"
 _SETTINGS_DEFAULTS = {
     "standalone_mode": True,
     "retrain_model": False,
-    "handshake_timeout_hours": 1.0
+    "handshake_timeout_hours": 1.0,
+    "known_media_types": [],
 }
 
 def load_app_settings() : 

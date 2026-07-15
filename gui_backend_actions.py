@@ -8,6 +8,7 @@ from PIL import Image, ImageTk
 
 from gui_theme import format_elapsed, WARNING
 from organism_menu import get_organism_options
+from media_menu import add_media_type_option
 from camera_tools import scan_available_cameras
 from startup_recovery import (
     current_folder_has_contents,
@@ -45,6 +46,30 @@ class BackendActionsMixin:
             self._append_log(f"New organism created: {name}.", "gray")
 
     def refresh_organism_menu(self):
+            # Options are re-read when the dropdown is opened
+            pass
+
+    def create_new_media_type(self):
+            name = simpledialog.askstring("Create New Media Type",
+                                          "Enter media type name:")
+            if name is None:
+                return
+            name = name.strip().replace(" ", "_").lower()
+            if not name:
+                messagebox.showerror("Error", "Media type name cannot be empty.")
+                return
+            if not re.match(r'^[a-zA-Z0-9_]+$', name):
+                messagebox.showerror(
+                    "Error",
+                    "Name can only contain letters, numbers, and underscores.")
+                return
+            add_media_type_option(name)
+            self.refresh_media_type_menu()
+            self.media_type.set(name)
+            messagebox.showinfo("Media Type Created", f"Created: {name}")
+            self._append_log(f"New media type created: {name}.", "gray")
+
+    def refresh_media_type_menu(self):
             # Options are re-read when the dropdown is opened
             pass
 
@@ -90,6 +115,11 @@ class BackendActionsMixin:
                 messagebox.showerror("Error", "No organism selected.")
                 return
 
+            media_type = self.media_type.get().strip()
+            if not media_type:
+                messagebox.showerror("Error", "No media type selected.")
+                return
+
             if current_folder_has_contents(self.current_folder):
                 messagebox.showerror(
                     "Old Runs Detected",
@@ -133,6 +163,7 @@ class BackendActionsMixin:
 
                 run_id = self.controller.begin_run(
                     microorganism_type=organism,
+                    media_type=media_type,
                     camera_index=cam_idx,
                     camera_name=cam_name,
                     duration_seconds=duration,
@@ -292,10 +323,12 @@ class BackendActionsMixin:
                 self._prompt_csv_upload(self._csv_upload_run_folder)
 
             # Move completed run
+            partner_confirmed = st.get("partner_confirmed", True)
             if (not self.controller.is_running
                     and self.controller.last_run_folder is not None
-                    and run_ok):
-                
+                    and run_ok
+                    and partner_confirmed):
+
                 s = load_app_settings()
                 standalone = s.get("standalone_mode",True)
 
@@ -312,12 +345,20 @@ class BackendActionsMixin:
                     self._append_log(
                         f"Run complete. Moved to {dest.name}.", "green")
                     self._show_run_summary(run_folder, captures, elapsed)
-                    
-                self._active_log_path = None
-                wipe_folder_contents(self.current_folder)
 
-                self._csv_uploaded = False  
-                self._csv_uploaded_prompted = False  
+                self._active_log_path = None
+
+                # Only wipe current/ if the run was actually moved out of it.
+                # Wiping after a failed move would permanently delete the run's
+                # images and metadata that are still sitting in current/.
+                if ok:
+                    wipe_folder_contents(self.current_folder)
+                else:
+                    self._append_log(
+                        "Run move failed — leaving files in current/ for recovery.", "red")
+
+                self._csv_uploaded = False
+                self._csv_uploaded_prompted = False
 
 
 
@@ -489,29 +530,23 @@ class BackendActionsMixin:
             How to behave when the user skips the CSV upload
             """
             from run_metadata import read_comms_file, atomic_write_json
-            import json
 
-            # Update comms.json to signal partner not to retain 
+            # Update comms.json to signal the partner not to retrain. Read-merge-write
+            # so the only sensor-owned mutation post-handshake (retrain_model) is
+            # applied without clobbering the ML-owned fields it reads back.
             try:
                 comms_path = Path(run_folder) / "comms.json"
                 comms = read_comms_file(run_folder) or {}
-                comms["retrain_model"] = False 
+                comms["retrain_model"] = False
                 atomic_write_json(comms_path, comms)
-                print("Written\n") # DEBUG
-
-            except Exception :
-                print("Passed")
-                pass
+            except Exception as error:
+                print(f"Could not update comms.json on skip: {error}")
 
             self._csv_uploaded = False
             self.controller.csv_skipped = True
             # Signal experiment thread to stop waiting
             self.controller.csv_ready_event.set()
             self._append_log("CSV upload skipped. Model will not be retrained.", "yellow")
-            
-            test = read_comms_file(run_folder)
-            test_retrain = test["retrain_model"]
-            print(f"retrain model: {test_retrain}\n") # DEBUG
 
             win.destroy()
 

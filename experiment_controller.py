@@ -1,7 +1,7 @@
 import threading
 import time
 
-from camera import open_camera
+from camera import open_camera, reopen_camera
 from experiment import run_experiment
 from laser_control import LaserRelay
 
@@ -45,13 +45,15 @@ class ExperimentController :
             "last_message_category": "green", # Log color for last_message
             "alert_message": None, # For specific error handling
             "alert_id" : 0, # For popup handling
-            "run_completed_successfully": False # False by default until actually completes correctly
+            "run_completed_successfully": False, # False by default until actually completes correctly
+            "partner_confirmed": True # In collaborative retrain mode, set False until the ML machine confirms ml_done
         }
         
 
     def begin_run(
             self,
             microorganism_type,
+            media_type,
             camera_index,
             duration_seconds,
             interval_seconds,
@@ -95,13 +97,15 @@ class ExperimentController :
             last_message="Starting experiment...",
             alert_message=None,
             alert_id=0,
-            run_completed_successfully = False
+            run_completed_successfully = False,
+            partner_confirmed = True
         )
 
         self.thread = threading.Thread(
             target=self._experiment_worker,
             args=(
             microorganism_type,
+            media_type,
             camera_index,
             camera_name,
             run_id,
@@ -128,6 +132,7 @@ class ExperimentController :
     def _experiment_worker(
         self,
         microorganism_type,
+        media_type,
         camera_index,
         camera_name,
         run_id,
@@ -172,6 +177,7 @@ class ExperimentController :
                 cap=self.cap,
                 laser=self.laser,
                 microorganism_type=microorganism_type,
+                media_type=media_type,
                 run_id=run_id,
                 duration_seconds=duration_seconds,
                 interval_seconds=interval_seconds,
@@ -189,6 +195,8 @@ class ExperimentController :
                 handshake_timeout_hours=handshake_timeout_hours,
                 csv_ready_event=csv_ready_event,
                 csv_skipped_getter=lambda: self.csv_skipped,
+                camera_index=camera_index,
+                camera_reopen=self._reopen_camera,
             )
 
             # Check if the stop button was not requested.
@@ -277,8 +285,18 @@ class ExperimentController :
             # Mark the controller as not running.
             self.is_running = False
 
+    def _reopen_camera(self, current_cap) :
+        """
+        Release the current camera handle and open a fresh one on the same
+        selected index. Keeps self.cap pointed at the live handle so the finally
+        cleanup releases the current object rather than a stale one. Returns the
+        new capture object.
+        """
+        self.cap = reopen_camera(current_cap, self.camera_index)
+        return self.cap
+
     def get_requested_duration_seconds(self) :
-        """ 
+        """
         Safely returns experiment duration
         """
 

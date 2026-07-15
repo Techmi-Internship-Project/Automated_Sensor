@@ -20,7 +20,6 @@ Row assignments (right column):
 import tkinter as tk
 from tkinter import ttk
 import time
-from pathlib import Path
 
 from gui_theme import (
     CARD_BG,
@@ -418,6 +417,14 @@ class RunStatusLogMixin:
         self.log_text.insert("end", f"{timestamp}  ", "time")
         self.log_text.insert("end", "● ", category)
         self.log_text.insert("end", f"{message}\n", category)
+
+        # Cap the log so a multi-day run can't grow the widget unbounded.
+        # Trim oldest lines once past the limit.
+        max_lines = 2000
+        line_count = int(self.log_text.index("end-1c").split(".")[0])
+        if line_count > max_lines:
+            self.log_text.delete("1.0", f"{line_count - max_lines}.0")
+
         self.log_text.configure(state="disabled")
         self.log_text.see("end")
 

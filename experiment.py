@@ -12,6 +12,7 @@ def run_experiment(
         cap,
         laser,
         microorganism_type,
+        media_type,
         run_id,
         duration_seconds,
         interval_seconds,
@@ -29,6 +30,10 @@ def run_experiment(
         handshake_timeout_hours = 1.0,
         csv_ready_event=None,
         csv_skipped_getter=None,
+        camera_index=0,
+        camera_reopen=None,
+        max_reconnect_attempts=3,
+        reconnect_backoff_seconds=2.0,
 ):
     """
     Run repeated measurements for specified amount of time
@@ -36,6 +41,11 @@ def run_experiment(
         cap: OpenCV VideoCapture object
         microorganism_type:
             Name of the microorganism being measured.
+
+        media_type:
+            Name of the growth media used for this run. Written to run.json
+            for the partner ML machine, which reads it as a categorical
+            feature (falling back to 'unknown' if absent).
 
         run_id:
             Unique identifier for this experiment.
@@ -53,13 +63,64 @@ def run_experiment(
     consecutive_aruco_misses = 0       # How many captures in a row used the fallback ROI
     last_known_roi = None              # Stores ROI from the most recent successful detection
 
-    def send_status(**kwargs) :  
+    def send_status(**kwargs) :
         """
         Send live status updates
         """
 
-        if status_callback is not None : 
+        if status_callback is not None :
             status_callback(**kwargs)
+
+    def attempt_camera_reopen(current_cap) :
+        """
+        Try to recover a dead camera (e.g. Windows MSMF closing the device on a
+        long run) by releasing and reopening it. Returns a working capture object
+        on success, or None if every attempt failed.
+        """
+        if camera_reopen is None :
+            return None
+
+        for attempt in range(1, max_reconnect_attempts + 1) :
+            send_status(
+                state="warning",
+                last_message=f"Camera lost — reopening (attempt {attempt}/{max_reconnect_attempts})...",
+                last_message_category="yellow",
+            )
+            try :
+                new_cap = camera_reopen(current_cap)
+                current_cap = new_cap
+                if new_cap is not None and new_cap.isOpened() :
+                    send_status(last_message="Camera reopened.", last_message_category="green")
+                    return new_cap
+            except Exception as cam_error :
+                print(f"Camera reopen attempt {attempt} failed: {cam_error}")
+            time.sleep(reconnect_backoff_seconds * attempt)
+
+        return None
+
+    def attempt_laser_reconnect() :
+        """
+        Try to recover a transient laser relay serial fault by reconnecting.
+        Returns True on success, False if every attempt failed.
+        """
+        if laser is None :
+            return False
+
+        for attempt in range(1, max_reconnect_attempts + 1) :
+            send_status(
+                state="warning",
+                last_message=f"Laser relay error — reconnecting (attempt {attempt}/{max_reconnect_attempts})...",
+                last_message_category="yellow",
+            )
+            try :
+                laser.reconnect()
+                send_status(last_message="Laser relay reconnected.", last_message_category="green")
+                return True
+            except Exception as relay_error :
+                print(f"Laser reconnect attempt {attempt} failed: {relay_error}")
+            time.sleep(reconnect_backoff_seconds * attempt)
+
+        return False
 
 
     # Create new folder for this experiment
@@ -82,10 +143,11 @@ def run_experiment(
     write_run_metadata(
         run_folder=run_folder,
         microorganism_type=microorganism_type,
+        media_type=media_type,
         run_id=run_id,
         duration_seconds=duration_seconds,
         interval_seconds=interval_seconds,
-        camera_index=0, # CHANGE LATER
+        camera_index=camera_index,
     )
 
 
@@ -184,6 +246,7 @@ def run_experiment(
                     filename = make_filename(
                         microorganism_type,
                         run_id,
+                        capture_index=capture_number,
                     )
 
                     # Put generated filename inside this run's folder.
@@ -218,28 +281,22 @@ def run_experiment(
                     error_text = str(error)
                     print(f"Capture failed: {error}")
 
-                    if "RELAY_FAILURE" in error_text:
-                        send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
-                        raise RuntimeError(error_text)
-
                     # ArUco not found on the very first capture — no fallback
                     # was available, so direct the user to the camera setup widget.
                     if "ARUCO_NOT_FOUND" in error_text and last_known_roi is None:
-                        
+
                         raise RuntimeError(
                             "ARUCO_NOT_FOUND: Could not detect ArUco markers on the "
                             "first capture. Please use the Camera Setup widget in the "
                             "main window to verify your camera and marker placement "
                             "before starting the experiment."
                         )
-                    
-                        
 
-                    consecutive_capture_failures += 1
-
+                    # Markers disappeared mid-run and continue_with_prev_roi
+                    # is off, so this counts as a failure. Not recoverable by a
+                    # reconnect (the hardware is fine, the markers are gone).
                     if "ARUCO_NOT_FOUND" in error_text: # TODO
-                        # Markers disappeared mid-run and continue_with_prev_roi
-                        # is off, so this counts as a failure.
+                        consecutive_capture_failures += 1
                         send_status(
                             last_capture_result="ArUco markers missing",
                             last_error=error_text,
@@ -248,7 +305,29 @@ def run_experiment(
                         finish_reason = "fatal_error"
                         break
 
+                    consecutive_capture_failures += 1
+
+                    # Transient laser relay serial fault — try a bounded reconnect
+                    # before treating it as fatal so one USB/serial glitch on a
+                    # multi-day run doesn't abort the whole experiment.
+                    if "RELAY_FAILURE" in error_text:
+                        if not attempt_laser_reconnect():
+                            send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
+                            raise RuntimeError(error_text)
+                        send_status(
+                            state="warning",
+                            last_capture_result="Relay recovered",
+                            last_error=error_text,
+                            last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: relay reconnected",
+                        )
+
+                    # Camera failure (e.g. Windows MSMF closing the device on a
+                    # long run) — try a bounded reopen before counting it fatal.
                     else:
+                        if "Camera failed to capture" in error_text:
+                            recovered_cap = attempt_camera_reopen(cap)
+                            if recovered_cap is not None:
+                                cap = recovered_cap
                         send_status(
                             state="warning",
                             last_capture_result="Failed",
@@ -257,12 +336,15 @@ def run_experiment(
                         )
 
                     if consecutive_capture_failures >= max_consecutive_failures:
-                        abort_msg = f"Marker not detected for {consecutive_capture_failures} consecutive captures.\nExperiment aborted."
+                        abort_msg = f"Capture failed for {consecutive_capture_failures} consecutive attempts.\nExperiment aborted."
                         print(abort_msg)
                         send_status(last_message=abort_msg, last_message_category="red")
                         raise RuntimeError(f"Fatal camera/capture failure: {error}")
-                # Schedule next capture from original timeline
+                # Schedule next capture from original timeline. Clamp to "now" so a
+                # slow capture (retries, reconnect) can't leave next_capture_time in
+                # the past and fire a burst of back-to-back captures to catch up.
                 next_capture_time += interval_seconds
+                next_capture_time = max(next_capture_time, time.monotonic())
             
 
             # Stop once duration reached
@@ -285,31 +367,55 @@ def run_experiment(
             )
 
 
-        if not standalone_mode and retrain_model and finish_reason in clean_finish_reasons : 
+        if not standalone_mode and retrain_model and finish_reason in clean_finish_reasons :
+            # Not yet confirmed by the partner ML machine. The GUI uses this to
+            # decide whether it is safe to move the run out of current/ — while
+            # it is False the run folder (and its sensor_data.csv) must stay put
+            # so the ML can still read it.
+            send_status(partner_confirmed=False)
             send_status(last_message="Experiment complete. Waiting for sensor CSV", state="awaiting_csv")
 
+            # Bounded wait for the user to upload/skip the CSV so the worker can't
+            # block forever if nobody responds.
+            csv_wait_seconds = handshake_timeout_hours * 3600
+            csv_ready = True
             if csv_ready_event is not None :
-                csv_ready_event.wait()
-            
-            # Check if user skipped CSV upload
-            if csv_skipped_getter is not None and csv_skipped_getter() : 
-                send_status(last_message="CSV upload skipped. Notifying partner machine...")
+                csv_ready = csv_ready_event.wait(timeout=csv_wait_seconds)
+
+            if not csv_ready :
+                # Nobody uploaded or skipped in time. Leave the run in current/
+                # (partner_confirmed stays False) rather than moving it while the
+                # ML might still act on it.
+                send_status(
+                    last_message="Timed out waiting for sensor CSV. Run left in current/ for the partner machine.",
+                    last_message_category="yellow",
+                )
             else :
-                send_status(last_message="Waiting for model retraining...", state="waiting_retrain")
-            
-            # Both outcomes wait for partner status 
-            ml_deadline = time.monotonic() + handshake_timeout_hours * 3600
-            while True : 
-                comms = read_comms_file(run_folder)
-                if comms and comms.get("ml_done") is True : 
-                    send_status(last_message="Retraining complete")
-                    break
-                if time.monotonic() > ml_deadline : 
-                    send_status(last_message="Retraining wait timed out", last_message_category="yellow")
-                    break
-                if stop_event is not None and stop_event.is_set() :
-                    break
-                time.sleep(10)
+                # Check if user skipped CSV upload
+                if csv_skipped_getter is not None and csv_skipped_getter() :
+                    send_status(last_message="CSV upload skipped. Notifying partner machine...")
+                else :
+                    send_status(last_message="Waiting for model retraining...", state="waiting_retrain")
+
+                # Both outcomes wait for partner status
+                ml_deadline = time.monotonic() + handshake_timeout_hours * 3600
+                while True :
+                    comms = read_comms_file(run_folder)
+                    if comms and comms.get("ml_done") is True :
+                        # Partner finished cleanly — safe for the GUI to move the run.
+                        send_status(last_message="Retraining complete", partner_confirmed=True)
+                        break
+                    if time.monotonic() > ml_deadline :
+                        # Partner never confirmed. Leave partner_confirmed False so the
+                        # GUI does not move the folder out from under the ML mid-retrain.
+                        send_status(
+                            last_message="Retraining wait timed out. Run left in current/ for the partner machine.",
+                            last_message_category="yellow",
+                        )
+                        break
+                    if stop_event is not None and stop_event.is_set() :
+                        break
+                    time.sleep(10)
 
     # Fatal capture, saving, camera, or relay failure
     except RuntimeError as error:
