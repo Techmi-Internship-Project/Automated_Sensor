@@ -1,3 +1,4 @@
+import ctypes
 import threading
 import time
 
@@ -5,7 +6,35 @@ from camera import open_camera, reopen_camera
 from experiment import run_experiment
 from laser_control import LaserRelay
 
-class ExperimentController : 
+# Flags for ctypes.windll.kernel32.SetThreadExecutionState, used to stop
+# Windows from sleeping partway through an unattended multi-hour run.
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+
+
+def _prevent_system_sleep() :
+    """
+    Tell Windows not to sleep until told otherwise. No-op (with a printed
+    warning) on non-Windows platforms, since ctypes.windll only exists there.
+    """
+    try :
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+    except AttributeError :
+        print("SetThreadExecutionState unavailable (not running on Windows) — sleep prevention skipped.")
+
+
+def _allow_system_sleep() :
+    """
+    Release the sleep-prevention request made in _prevent_system_sleep so
+    normal power management resumes once the run ends.
+    """
+    try :
+        ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+    except AttributeError :
+        pass
+
+
+class ExperimentController :
     """
     Class that controls starting and stopping experiments
     """
@@ -154,6 +183,11 @@ class ExperimentController :
         # Track whether the run finished normally.
         run_completed_successfully = False
 
+        # Stop Windows from sleeping for the duration of the run — an
+        # unattended run left overnight has no one there to wake the
+        # machine back up if it suspends partway through.
+        _prevent_system_sleep()
+
         # Try to run the full experiment.
         try:
 
@@ -240,6 +274,9 @@ class ExperimentController :
 
         # Always clean up hardware resources.
         finally:
+
+            # Let Windows sleep normally again now that the run is over.
+            _allow_system_sleep()
 
             # Check if the laser relay exists.
             if self.laser is not None:

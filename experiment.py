@@ -34,6 +34,7 @@ def run_experiment(
         camera_reopen=None,
         max_reconnect_attempts=3,
         reconnect_backoff_seconds=2.0,
+        heartbeat_interval_seconds=120,
 ):
     """
     Run repeated measurements for specified amount of time
@@ -173,6 +174,7 @@ def run_experiment(
     start_time = time.monotonic()
     next_capture_time = start_time
     experiment_end_time = start_time + duration_seconds
+    last_heartbeat_time = start_time
 
 
     finish_reason = "unknown"
@@ -345,7 +347,9 @@ def run_experiment(
                 # the past and fire a burst of back-to-back captures to catch up.
                 next_capture_time += interval_seconds
                 next_capture_time = max(next_capture_time, time.monotonic())
-            
+                last_heartbeat_time = time.monotonic()
+                send_status(last_message="Waiting for next capture...")
+
 
             # Stop once duration reached
             if elapsed_time >= current_duration:
@@ -354,7 +358,18 @@ def run_experiment(
                 send_status(state="finished", last_message="Experiment duration reached")
                 break
 
-            send_status(last_message="Waiting for next capture...")
+            # Periodic heartbeat so the log shows proof of life during long
+            # waits between captures. Without this, a crash mid-wait leaves
+            # no trace between one capture and the next scheduled one, which
+            # can be a gap of many minutes.
+            if current_time - last_heartbeat_time >= heartbeat_interval_seconds:
+                remaining_wait = max(0, int(next_capture_time - current_time))
+                send_status(
+                    last_message=f"Still running — next capture in {remaining_wait}s...",
+                    last_message_category="gray",
+                )
+                last_heartbeat_time = current_time
+
             time.sleep(0.1)
 
         # Only write DONE.json if experiment if experiment finished successfully
