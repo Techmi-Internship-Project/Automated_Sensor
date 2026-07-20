@@ -43,8 +43,13 @@ def detect_aruco_markers(image):
 
 
 
+# Which corner index of each marker's own square is the ROI's "inside
+# corner" (see get_roi_corners docstring).
+_INSIDE_CORNER_INDEX = {0: 2, 1: 3, 2: 0, 3: 1}
+
+
 def get_roi_corners(corners, ids):
-    
+
     """
     Get the four image points that define the ROI.
 
@@ -58,19 +63,31 @@ def get_roi_corners(corners, ids):
     The inside corner of each marker is used so the markers themselves are
     excluded from the final ROI.
 
-    Returns:
-        float32 array in this order:
-            top-left
-            top-right
-            bottom-right
-            bottom-left
+    If exactly three of the four required markers are detected, the fourth
+    corner is geometrically inferred from the other three: for a
+    parallelogram, opposite corners sum to the same value (the diagonals
+    bisect each other), so e.g. bottom_left = top_left + bottom_right -
+    top_right. This is only an approximation under a true perspective
+    transform (it's exact for an affine one), but is a good stand-in for a
+    single momentarily-occluded marker (condensation, debris, a bad angle)
+    on an otherwise fixed, close-to-fronto-parallel camera/jig — and is
+    still fresher than falling back to an older successful capture's ROI.
 
-        Returns None if any required marker is missing.
+    Returns:
+        (roi_corners, inferred_marker_id):
+            roi_corners:
+                float32 array of [top_left, top_right, bottom_right,
+                bottom_left], or None if fewer than three required markers
+                were detected.
+
+            inferred_marker_id:
+                The marker ID whose corner was geometrically inferred
+                (rather than directly detected), or None if all four
+                markers were detected directly, or if detection failed.
     """
 
-
     if ids is None:
-        return None
+        return None, None
 
     detected_markers = {}
 
@@ -80,20 +97,34 @@ def get_roi_corners(corners, ids):
             continue
         detected_markers[marker_id] = marker_corners.reshape(4, 2)
 
-    if not REQUIRED_MARKER_IDS.issubset(detected_markers):
-        return None
+    missing_ids = REQUIRED_MARKER_IDS - set(detected_markers)
 
-    top_left = detected_markers[0][2]
-    top_right = detected_markers[1][3]
-    bottom_right = detected_markers[2][0]
-    bottom_left = detected_markers[3][1]
+    # Need at least three of the four markers to have any usable geometry.
+    if len(missing_ids) > 1:
+        return None, None
 
-    return np.float32([
-        top_left,
-        top_right,
-        bottom_right,
-        bottom_left
-    ])
+    points = {
+        marker_id: detected_markers[marker_id][corner_index]
+        for marker_id, corner_index in _INSIDE_CORNER_INDEX.items()
+        if marker_id in detected_markers
+    }
+
+    inferred_marker_id = None
+    if missing_ids:
+        inferred_marker_id = missing_ids.pop()
+        # Diagonal pairs are (0, 2) and (1, 3): points[0] + points[2] ==
+        # points[1] + points[3]. Solve for whichever corner is missing.
+        if inferred_marker_id == 0:
+            points[0] = points[1] + points[3] - points[2]
+        elif inferred_marker_id == 1:
+            points[1] = points[0] + points[2] - points[3]
+        elif inferred_marker_id == 2:
+            points[2] = points[1] + points[3] - points[0]
+        else:
+            points[3] = points[0] + points[2] - points[1]
+
+    roi_corners = np.float32([points[0], points[1], points[2], points[3]])
+    return roi_corners, inferred_marker_id
 
 
 def align_roi(image, roi_corners):

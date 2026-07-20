@@ -568,11 +568,14 @@ class CameraPanelMixin:
                 if self._show_overlay:
                     if corners is not None and ids is not None:
                         cv.aruco.drawDetectedMarkers(display, corners, ids)
-                    roi = get_roi_corners(corners, ids)
+                    roi, inferred_marker_id = get_roi_corners(corners, ids)
                     if roi is not None:
                         cv.polylines(display, [roi.astype(int)],
                                      isClosed=True, color=(0, 255, 0), thickness=2)
-                        self._roi_var.set("ROI: Found")
+                        if inferred_marker_id is not None:
+                            self._roi_var.set(f"ROI: Found (marker {inferred_marker_id} inferred)")
+                        else:
+                            self._roi_var.set("ROI: Found")
                     else:
                         self._roi_var.set("ROI: Not found")
                 else:

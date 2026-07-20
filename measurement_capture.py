@@ -16,11 +16,15 @@ def find_roi(cap, max_attempts=5):
             for the ArUco markers.
 
     Returns:
-        roi_corners:
-            The four detected ROI corner coordinates.
+        (roi_corners, inferred_marker_id):
+            roi_corners:
+                The four detected/inferred ROI corner coordinates, or None
+                if fewer than three required markers were ever detected.
 
-        None:
-            Returned if the markers could not be detected.
+            inferred_marker_id:
+                The marker ID that was geometrically inferred from the
+                other three (see aruco.get_roi_corners), or None if all
+                four were detected directly, or if detection failed.
     """
 
     # Use normal exposure because the ArUco markers may be difficult
@@ -44,18 +48,18 @@ def find_roi(cap, max_attempts=5):
         corners, ids = detect_aruco_markers(frame)
 
         # Use the detected markers to determine the four ROI corners.
-        roi_corners = get_roi_corners(corners, ids)
+        roi_corners, inferred_marker_id = get_roi_corners(corners, ids)
 
-        # If all required markers were found, return the ROI corners.
+        # If enough markers were found, return the ROI corners.
         if roi_corners is not None:
-            return roi_corners
+            return roi_corners, inferred_marker_id
 
         # Marker detection failed for this frame.
         print(
             f"Marker detection failed, "
             f"attempt {attempt + 1}/{max_attempts}"
         )
-    return None
+    return None, None
 
 
 def capture_measurement(cap, laser, status_callback=None, fallback_roi=None):
@@ -101,7 +105,7 @@ def capture_measurement(cap, laser, status_callback=None, fallback_roi=None):
 
     # Find the target area's current position.
     send_status(last_message="Finding ROI...")
-    roi_corners = find_roi(cap)
+    roi_corners, inferred_marker_id = find_roi(cap)
 
     # Use fallback ROI if markers were not detected and one is available.
     if roi_corners is None:
@@ -110,6 +114,11 @@ def capture_measurement(cap, laser, status_callback=None, fallback_roi=None):
             roi_corners = fallback_roi
         else:
             raise RuntimeError("ARUCO_NOT_FOUND: Could not detect all four ArUco markers")
+    elif inferred_marker_id is not None:
+        send_status(
+            last_message=f"Marker {inferred_marker_id} not detected — inferred its position from the other three.",
+            last_message_category="yellow",
+        )
 
     # Use low exposure for both measurement images.
     send_status(last_message="Setting low exposure...")
