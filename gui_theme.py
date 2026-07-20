@@ -22,6 +22,8 @@ TEXT_MUTED  = "#667085"
 SUCCESS     = "#16a34a"
 DANGER      = "#dc2626"
 WARNING     = "#f97316"
+DANGER_BG   = "#fee2e2"
+WARNING_BG  = "#fef3c7"
 DISABLED_BG = "#eef2f7"
 
 # Font stack used across the whole GUI.
@@ -42,6 +44,8 @@ __all__ = [
     "SUCCESS",
     "DANGER",
     "WARNING",
+    "DANGER_BG",
+    "WARNING_BG",
     "DISABLED_BG",
     "FONT_BRAND",
     "FONT_MONO",

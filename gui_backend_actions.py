@@ -18,6 +18,7 @@ from startup_recovery import (
 )
 from gui_camera_panel import FilledSliderInput
 from config import load_app_settings
+from run_metadata import read_done_file
 
 
 class BackendActionsMixin:
@@ -184,10 +185,24 @@ class BackendActionsMixin:
                 self.update_control_states()
                 self._append_log(
                     f"Experiment started. Run ID: {run_id}.", "gray")
-            
+
+                # Reset the biomass/CFU graph for the new run regardless of
+                # mode — otherwise a standalone run started after a
+                # collaborative one would keep showing the previous run's
+                # stale data (the graph itself no longer hides real data
+                # based on the *current* mode setting, only on whether any
+                # has actually been collected — see _update_biomass_graph).
+                self._biomass_data = []
+                self._cfu_data = []
+                self._run_start_time = None
+                self._current_state_var.set("-")
+                self._current_biomass_var.set("Biomass: —")
+                self._current_cfu_var.set("CFU/mL: —")
+                self._update_biomass_graph()
+
                 # Start biomass polling if in collaborative mode
                 from config import load_app_settings as _las
-                if not _las().get("standalone_mode", True) : 
+                if not _las().get("standalone_mode", True) :
                     self._start_comms_poll()
 
 
@@ -351,7 +366,8 @@ class BackendActionsMixin:
                     self.last_summary_dest = str(dest)
                     self._append_log(
                         f"Run complete. Moved to {dest.name}.", "green")
-                    self._show_run_summary(run_folder, captures, elapsed)
+                    done_data = read_done_file(dest)
+                    self._show_run_summary(run_folder, captures, elapsed, done_data)
 
                 self._active_log_path = None
 
@@ -408,6 +424,17 @@ class BackendActionsMixin:
                  self.last_msg_var.set(last_msg)
                  if self.controller.is_running:
                     self._append_log(last_msg, last_msg_category)
+
+            # Persistent degraded-run banner — unlike last_msg_var above,
+            # this stays up for as long as the fault is active rather than
+            # being overwritten by the next routine status message.
+            degraded = st.get("degraded", False)
+            if degraded :
+                degraded_message = st.get("degraded_message") or "Unknown problem"
+                self._degraded_banner_var.set(f"⚠ DEGRADED — RUN CONTINUING: {degraded_message}")
+                self._degraded_banner.grid()
+            else :
+                self._degraded_banner.grid_remove()
 
 
     def update_control_states(self):

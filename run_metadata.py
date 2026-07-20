@@ -56,20 +56,50 @@ def write_done_file(
         run_folder,
         run_id,
         capture_count,
-        reason
-):  
+        reason,
+        had_errors=False,
+        failed_capture_count=0,
+        failure_reasons=None,
+        degraded_at_finish=False,
+):
     """
-    Write DONE.json when experiment finishes properly
+    Write DONE.json when experiment finishes properly.
+
+    had_errors / failed_capture_count / failure_reasons / degraded_at_finish
+    record whether the run hit any capture/hardware failures along the way
+    (the run still completes and saves normally even so — see experiment.py),
+    so a run with data gaps is distinguishable later from a clean one.
     """
 
     data = {
         "run_id": run_id,
         "capture_count": capture_count,
         "reason": reason,
-        "finished_at": datetime.now().isoformat()
+        "finished_at": datetime.now().isoformat(),
+        "had_errors": had_errors,
+        "failed_capture_count": failed_capture_count,
+        "failure_reasons": failure_reasons or [],
+        "degraded_at_finish": degraded_at_finish,
     }
 
     atomic_write_json(Path(run_folder) / "DONE.json", data)
+
+
+def read_done_file(run_folder) :
+    """
+    Reads DONE.json safely. Returns None if missing or corrupt
+    """
+
+    path = Path(run_folder) / "DONE.json"
+    if not path.exists() :
+        return None
+
+    try :
+        with open(path, "r", encoding="utf-8") as f :
+            return json.load(f)
+
+    except Exception :
+        return None
 
 
 def write_comms_file(run_folder, retrain_model=False) :

@@ -24,6 +24,7 @@ import time
 from gui_theme import (
     CARD_BG,
     DANGER,
+    DANGER_BG,
     FONT_BRAND,
     CARD_BORDER,
     FONT_MONO,
@@ -301,6 +302,31 @@ class RunStatusLogMixin:
                 self._status_label.configure(textvariable=self.last_msg_var, fg=TEXT_MUTED)
 
         self.error_var.trace_add("write", _on_error_change)
+
+        # ── Degraded-run banner ─────────────────────────────────────────────
+        # Unlike the status line above, this stays visible for as long as a
+        # post-first-capture fault is active — it does not get silently
+        # overwritten by the next routine "Waiting for next capture..."
+        # message, since a run can now stay in a degraded state for hours
+        # while it keeps retrying rather than aborting.
+        self._degraded_banner = tk.Frame(c, bg=DANGER_BG)
+        self._degraded_banner.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self._degraded_banner.grid_columnconfigure(0, weight=1)
+        self._degraded_banner_var = tk.StringVar(value="")
+        tk.Label(
+            self._degraded_banner,
+            textvariable=self._degraded_banner_var,
+            fg=DANGER,
+            bg=DANGER_BG,
+            font=(FONT_BRAND, 9, "bold"),
+            anchor="w",
+            justify="left",
+            wraplength=700,
+            padx=8,
+            pady=5,
+        ).pack(fill=tk.X)
+        self._degraded_banner.grid_remove()  # hidden until a run is degraded
+
     # ── Donut renderer ────────────────────────────────────────────────────────
     def _draw_donut(self, pct: float):
         """

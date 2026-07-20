@@ -42,10 +42,16 @@ class ExperimentController :
     def __init__(self):
         self.thread = None # Background experiment thread
         self.stop_event = threading.Event() # Event used to stop experiment
-        self.hardware_error_event = threading.Event() # Event used to stop experiment if hardware error
+        self.hardware_error_event = threading.Event() # Event used to signal a hardware fault
         self.csv_ready_event = threading.Event()
         self.csv_skipped = False
-        self.hardware_error_message = None
+        # Per-item hardware fault tracking (item name -> message). A dict
+        # rather than one shared string so independent faults (e.g. Camera
+        # AND Storage both down) don't clobber each other, and so a single
+        # item recovering can clear just its own entry instead of wiping out
+        # a still-active fault on a different item.
+        self.hardware_faults = {}
+        self._hardware_fault_lock = threading.Lock()
         self.is_running = False
         self.last_error = None # Most recent error message
         self.last_run_folder = None # Folder where most recent run was saved
@@ -75,7 +81,9 @@ class ExperimentController :
             "alert_message": None, # For specific error handling
             "alert_id" : 0, # For popup handling
             "run_completed_successfully": False, # False by default until actually completes correctly
-            "partner_confirmed": True # In collaborative retrain mode, set False until the ML machine confirms ml_done
+            "partner_confirmed": True, # In collaborative retrain mode, set False until the ML machine confirms ml_done
+            "degraded": False, # True while a post-first-capture fault is currently active
+            "degraded_message": None, # Human-readable current problem description for the GUI banner
         }
         
 
@@ -103,7 +111,8 @@ class ExperimentController :
         self.stop_event.clear() # Clear any previous stop request
         self.hardware_error_event.clear() # Clear any previous hardware error events
         self.csv_ready_event.clear()
-        self.hardware_error_message = None
+        with self._hardware_fault_lock :
+            self.hardware_faults = {}
         self.last_error = None
         self.last_run_folder = None
         self.csv_skipped = False
@@ -127,7 +136,9 @@ class ExperimentController :
             alert_message=None,
             alert_id=0,
             run_completed_successfully = False,
-            partner_confirmed = True
+            partner_confirmed = True,
+            degraded = False,
+            degraded_message = None,
         )
 
         self.thread = threading.Thread(
@@ -223,7 +234,7 @@ class ExperimentController :
                 max_consecutive_failures=max_consecutive_failures,
                 end_after_next_capture_event=self.end_after_current_capture_event,
                 hardware_error_event=self.hardware_error_event,
-                hardware_error_message_getter=lambda: self.hardware_error_message,
+                hardware_error_message_getter=self.get_hardware_fault_message,
                 standalone_mode=standalone_mode,
                 retrain_model=retrain_model,
                 handshake_timeout_hours=handshake_timeout_hours,
@@ -335,6 +346,37 @@ class ExperimentController :
         """
         self.cap = reopen_camera(current_cap, self.camera_index)
         return self.cap
+
+    def set_hardware_fault(self, item, message) :
+        """
+        Records that a given health item (Camera / Laser Module / Storage)
+        is currently faulted. Safe to call for multiple independent items at
+        once — each gets its own entry so one item's fault doesn't clobber
+        another's.
+        """
+        with self._hardware_fault_lock :
+            self.hardware_faults[item] = message
+            self.hardware_error_event.set()
+
+    def clear_hardware_fault(self, item) :
+        """
+        Records that a given health item has recovered. Only clears the
+        shared hardware_error_event once every faulted item has recovered.
+        """
+        with self._hardware_fault_lock :
+            self.hardware_faults.pop(item, None)
+            if not self.hardware_faults :
+                self.hardware_error_event.clear()
+
+    def get_hardware_fault_message(self) :
+        """
+        Returns a combined human-readable message for every currently
+        faulted item, or None if nothing is faulted.
+        """
+        with self._hardware_fault_lock :
+            if not self.hardware_faults :
+                return None
+            return " | ".join(f"{item}: {msg}" for item, msg in self.hardware_faults.items())
 
     def get_requested_duration_seconds(self) :
         """

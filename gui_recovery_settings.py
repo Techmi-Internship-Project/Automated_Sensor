@@ -364,10 +364,16 @@ class RecoverySettingsMixin:
         self._bio_ax.clear()
         self._bio_ax.set_facecolor("#f8fafc")
 
-
-        if standalone or not data :
+        # Gate the placeholder purely on whether any data has actually been
+        # collected for the run currently being displayed — not on the
+        # *current* standalone_mode setting, which can be toggled in
+        # Settings after a collaborative run finishes (e.g. planning the
+        # next run) and would otherwise hide that run's real data. The
+        # standalone check is only used to pick the placeholder wording.
+        if not data :
+            placeholder_text = "Standalone mode\n(no biomass/CFU data)" if standalone else "Awaiting data..."
             self._bio_ax.text(0.5, 0.5,
-                              "Standalone mode\n or awaiting data",
+                              placeholder_text,
                               ha="center", va="center",
                               transform=self._bio_ax.transAxes,
                               color=TEXT_MUTED, fontsize=7)
@@ -527,10 +533,18 @@ class RecoverySettingsMixin:
 
         self._refresh_overall_health_indicator()
 
-        # Signal running experiment if a critical device just failed
-        if not ok and prev_state is True and self.controller.is_running : 
-            self.controller.hardware_error_message = f"{item} disconnected during experiment"
-            self.controller.hardware_error_event.set()
+        # Signal a running experiment when a critical device's health
+        # changes, in either direction — set the fault when it goes down so
+        # the run can react (and, once it has captured at least one image,
+        # keep running in a degraded state instead of aborting), and clear
+        # it on recovery so the degraded banner and log can reflect that the
+        # problem is gone. Per-item tracking so an unrelated item's fault
+        # isn't accidentally cleared/clobbered by this one.
+        if self.controller.is_running :
+            if not ok and prev_state is True :
+                self.controller.set_hardware_fault(item, f"{item} disconnected during experiment")
+            elif ok and prev_state is False :
+                self.controller.clear_hardware_fault(item)
 
     def _refresh_overall_health_indicator(self):
         """
@@ -1180,9 +1194,13 @@ class RecoverySettingsMixin:
         except Exception:
             pass
 
-    def _show_run_summary(self, run_folder, captures, elapsed):
+    def _show_run_summary(self, run_folder, captures, elapsed, done_data=None):
         """
         Shows a popup summary when a run finishes and moves to training.
+
+        done_data, if provided, is the parsed DONE.json for the run — used
+        to flag runs that completed despite hitting capture/hardware faults
+        along the way, so a run with data gaps isn't mistaken for a clean one.
         """
 
         msg = (
@@ -1191,4 +1209,14 @@ class RecoverySettingsMixin:
             f"Elapsed time:   {format_elapsed(elapsed)}\n\n"
             f"Folder: {run_folder}"
         )
+
+        done_data = done_data or {}
+        if done_data.get("had_errors") :
+            reasons = done_data.get("failure_reasons", [])
+            msg += (
+                f"\n\n⚠ This run was degraded: "
+                f"{done_data.get('failed_capture_count', 0)} failed capture attempt(s).\n"
+                f"Reasons encountered:\n- " + "\n- ".join(reasons)
+            )
+
         messagebox.showinfo("Run Complete", msg)

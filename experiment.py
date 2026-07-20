@@ -66,11 +66,16 @@ def run_experiment(
 
     def send_status(**kwargs) :
         """
-        Send live status updates
+        Send live status updates. Never lets a problem in the status
+        callback itself (e.g. a bug in the GUI's update handler) become a
+        way to abort an otherwise-healthy run.
         """
 
         if status_callback is not None :
-            status_callback(**kwargs)
+            try :
+                status_callback(**kwargs)
+            except Exception as callback_error :
+                print(f"send_status callback failed: {callback_error}")
 
     def attempt_camera_reopen(current_cap) :
         """
@@ -122,6 +127,60 @@ def run_experiment(
             time.sleep(reconnect_backoff_seconds * attempt)
 
         return False
+
+    # Tracks faults that occur after at least one image has already been
+    # captured. Once capture_number >= 1, a run is never aborted by a
+    # hardware/capture fault — instead it logs clearly and keeps retrying
+    # every scheduled interval until the requested duration elapses, so an
+    # unattended run always completes and saves whatever it managed to
+    # capture. Before the first successful capture, existing fail-fast
+    # behavior is unchanged (see each raise site below).
+    active_problems = {}        # "hardware"/"capture" -> current problem message
+    failure_reasons_seen = []   # distinct messages seen this run, first-seen order
+    total_capture_failures = 0  # lifetime count, unlike consecutive_capture_failures
+
+    def _sync_degraded_status() :
+        send_status(
+            degraded=bool(active_problems),
+            degraded_message=" | ".join(active_problems.values()) or None,
+        )
+
+    def _record_failure_reason(msg) :
+        if msg not in failure_reasons_seen :
+            failure_reasons_seen.append(msg)
+
+    def _enter_hardware_degraded(msg) :
+        if active_problems.get("hardware") != msg :
+            active_problems["hardware"] = msg
+            _record_failure_reason(msg)
+            print(f"DEGRADED (hardware): {msg}")
+            send_status(
+                state="warning",
+                last_message=f"DEGRADED: {msg} — run will continue to duration_reached.",
+                last_message_category="red",
+            )
+        _sync_degraded_status()
+
+    def _clear_hardware_degraded() :
+        if "hardware" in active_problems :
+            del active_problems["hardware"]
+            print("Hardware fault cleared.")
+            send_status(last_message="Hardware recovered.", last_message_category="green")
+        _sync_degraded_status()
+
+    def _enter_capture_degraded(msg) :
+        if active_problems.get("capture") != msg :
+            active_problems["capture"] = msg
+            _record_failure_reason(msg)
+            print(f"DEGRADED (capture): {msg}")
+        _sync_degraded_status()
+
+    def _clear_capture_degraded() :
+        if "capture" in active_problems :
+            del active_problems["capture"]
+            print("Capture failures recovered.")
+            send_status(last_message="Capture recovered — resuming normal captures.", last_message_category="green")
+        _sync_degraded_status()
 
 
     # Create new folder for this experiment
@@ -190,9 +249,15 @@ def run_experiment(
                 send_status(state="stopping", last_message="Stop requested.")
                 break
 
-            if hardware_error_event is not None and hardware_error_event.is_set() : 
+            if hardware_error_event is not None and hardware_error_event.is_set() :
                 msg = hardware_error_message_getter() if hardware_error_message_getter else "Hardware disconnected"
-                raise RuntimeError(f"HARDWARE_FAULT: {msg}")
+                if capture_number == 0 :
+                    raise RuntimeError(f"HARDWARE_FAULT: {msg}")
+                _enter_hardware_degraded(msg)
+            elif "hardware" in active_problems :
+                # The event was cleared (health check saw the item recover) —
+                # let the banner and log reflect that.
+                _clear_hardware_degraded()
 
             current_time = time.monotonic()
             elapsed_time = current_time - start_time
@@ -244,6 +309,8 @@ def run_experiment(
                     last_known_roi = roi_used
 
                     consecutive_capture_failures = 0  # Successful capture
+                    if "capture" in active_problems :
+                        _clear_capture_degraded()
 
                     filename = make_filename(
                         microorganism_type,
@@ -300,6 +367,7 @@ def run_experiment(
                         )
 
                     consecutive_capture_failures += 1
+                    total_capture_failures += 1
 
                     # Markers disappeared mid-run and continue_with_prev_roi is
                     # off. This is a normal missed-image case (bad lighting,
@@ -314,20 +382,32 @@ def run_experiment(
                             last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: markers not found",
                             last_message_category="yellow",
                         )
+                        if capture_number >= 1 :
+                            _enter_capture_degraded(f"ArUco markers not found: {error_text}")
 
                     # Transient laser relay serial fault — try a bounded reconnect
                     # before treating it as fatal so one USB/serial glitch on a
                     # multi-day run doesn't abort the whole experiment.
                     elif "RELAY_FAILURE" in error_text:
                         if not attempt_laser_reconnect():
-                            send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
-                            raise RuntimeError(error_text)
-                        send_status(
-                            state="warning",
-                            last_capture_result="Relay recovered",
-                            last_error=error_text,
-                            last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: relay reconnected",
-                        )
+                            if capture_number == 0 :
+                                send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
+                                raise RuntimeError(error_text)
+                            _enter_capture_degraded(f"Relay failure (reconnect exhausted): {error_text}")
+                            send_status(
+                                state="warning",
+                                last_capture_result="Relay failure — degraded",
+                                last_error=error_text,
+                                last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: relay failure persists, will keep retrying",
+                                last_message_category="red",
+                            )
+                        else :
+                            send_status(
+                                state="warning",
+                                last_capture_result="Relay recovered",
+                                last_error=error_text,
+                                last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: relay reconnected",
+                            )
 
                     # Camera failure (e.g. Windows MSMF closing the device on a
                     # long run) — try a bounded reopen before counting it fatal.
@@ -342,8 +422,19 @@ def run_experiment(
                             last_error=error_text,
                             last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: {error_text}"
                         )
+                        if capture_number >= 1 :
+                            _enter_capture_degraded(f"Capture failure: {error_text}")
 
-                    if consecutive_capture_failures >= max_consecutive_failures:
+                    # Before the first successful capture, a run that can't
+                    # get going at all still fails fast (nothing worth
+                    # waiting hours/days for). Once at least one image has
+                    # been captured, every failure above has already been
+                    # logged and marked degraded immediately (not gated on
+                    # this threshold — a save-only failure can otherwise keep
+                    # resetting consecutive_capture_failures to 0 every time
+                    # capture_measurement itself still succeeds, so waiting
+                    # for this count to reach the threshold isn't reliable).
+                    if consecutive_capture_failures >= max_consecutive_failures and capture_number == 0 :
                         abort_msg = f"Capture failed for {consecutive_capture_failures} consecutive attempts.\nExperiment aborted."
                         print(abort_msg)
                         send_status(last_message=abort_msg, last_message_category="red")
@@ -379,12 +470,16 @@ def run_experiment(
             time.sleep(0.1)
 
         # Only write DONE.json if experiment if experiment finished successfully
-        if finish_reason in clean_finish_reasons : 
+        if finish_reason in clean_finish_reasons :
             write_done_file(
                 run_folder=run_folder,
                 run_id=run_id,
                 capture_count=capture_number,
-                reason=finish_reason
+                reason=finish_reason,
+                had_errors=bool(failure_reasons_seen),
+                failed_capture_count=total_capture_failures,
+                failure_reasons=failure_reasons_seen,
+                degraded_at_finish=bool(active_problems),
             )
 
 
@@ -463,6 +558,11 @@ def run_experiment(
         )
 
     finally :
+        # Always clear the live banner on any exit path (clean finish,
+        # pre-capture fatal error, user stop) — this only affects the live
+        # GUI state, not the permanent DONE.json degradation record below.
+        send_status(degraded=False, degraded_message=None)
+
         if laser is not None :  # Just in case failure occurs
             try :
                 laser.off()
