@@ -254,8 +254,12 @@ class ExperimentController :
                     run_completed_successfully=False
                 )
 
-        # Handle fatal experiment errors.
-        except RuntimeError as error:
+        # Handle fatal experiment errors. Catches Exception broadly, not just
+        # RuntimeError — anything unexpected escaping run_experiment (e.g. a
+        # raw OSError from a metadata write on a dropped drive) must still
+        # surface here instead of silently killing this daemon thread with
+        # no GUI error and is_running stuck True.
+        except Exception as error:
 
             # Store the error text.
             self.last_error = str(error)

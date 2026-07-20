@@ -279,7 +279,12 @@ def run_experiment(
                                     last_message="Ending after capture as requested.")
                         break
 
-                except RuntimeError as error:
+                except Exception as error:
+                    # Catches RuntimeError from capture_measurement's known
+                    # failure modes, but also anything unexpected (e.g. a
+                    # raw cv2/OpenCV error) — a single bad capture should
+                    # never be able to silently kill an otherwise-healthy
+                    # multi-hour run.
                     error_text = str(error)
                     print(f"Capture failed: {error}")
 
@@ -294,25 +299,26 @@ def run_experiment(
                             "before starting the experiment."
                         )
 
-                    # Markers disappeared mid-run and continue_with_prev_roi
-                    # is off, so this counts as a failure. Not recoverable by a
-                    # reconnect (the hardware is fine, the markers are gone).
-                    if "ARUCO_NOT_FOUND" in error_text: # TODO
-                        consecutive_capture_failures += 1
+                    consecutive_capture_failures += 1
+
+                    # Markers disappeared mid-run and continue_with_prev_roi is
+                    # off. This is a normal missed-image case (bad lighting,
+                    # vibration, momentary obstruction) — log it and count it
+                    # toward max_consecutive_failures like any other capture
+                    # failure, rather than aborting the whole run on one miss.
+                    if "ARUCO_NOT_FOUND" in error_text:
                         send_status(
+                            state="warning",
                             last_capture_result="ArUco markers missing",
                             last_error=error_text,
                             last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: markers not found",
+                            last_message_category="yellow",
                         )
-                        finish_reason = "fatal_error"
-                        break
-
-                    consecutive_capture_failures += 1
 
                     # Transient laser relay serial fault — try a bounded reconnect
                     # before treating it as fatal so one USB/serial glitch on a
                     # multi-day run doesn't abort the whole experiment.
-                    if "RELAY_FAILURE" in error_text:
+                    elif "RELAY_FAILURE" in error_text:
                         if not attempt_laser_reconnect():
                             send_status(state="error", last_error=error_text, last_message=f"Fatal relay failure: {error_text}")
                             raise RuntimeError(error_text)
@@ -432,8 +438,10 @@ def run_experiment(
                         break
                     time.sleep(10)
 
-    # Fatal capture, saving, camera, or relay failure
-    except RuntimeError as error:
+    # Fatal capture, saving, camera, relay failure, or anything unexpected
+    # (e.g. an OSError writing DONE.json) — catches everything so the run
+    # always reports a clear reason instead of the thread dying silently.
+    except Exception as error:
         fatal_error_text = str(error)
         finish_reason = "fatal_error"
 
@@ -459,8 +467,8 @@ def run_experiment(
             try :
                 laser.off()
 
-            except RuntimeError : 
-                pass # Continue if laser cleanup fails
+            except Exception :
+                pass # Continue if laser cleanup fails — never let cleanup itself crash
 
         
     print(f"Experiment finished with {capture_number} saved images.")

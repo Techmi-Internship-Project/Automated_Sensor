@@ -554,80 +554,92 @@ class CameraPanelMixin:
                     100, self._preview_frame_loop)
                 return
 
-            display = frame.copy()
-            corners, ids = detect_aruco_markers(display)
-            cnt = 0 if ids is None else len(ids)
-            self._marker_var.set(f"Markers: {cnt} detected")
+            # Detection, resizing, and Tk image conversion all touch data
+            # coming straight from the camera (frame size, marker geometry),
+            # so a single malformed frame (e.g. degenerate 0-width crop)
+            # must not permanently freeze the preview loop by skipping the
+            # reschedule call at the end of this function.
+            try:
+                display = frame.copy()
+                corners, ids = detect_aruco_markers(display)
+                cnt = 0 if ids is None else len(ids)
+                self._marker_var.set(f"Markers: {cnt} detected")
 
-            if self._show_overlay:
-                if corners is not None and ids is not None:
-                    cv.aruco.drawDetectedMarkers(display, corners, ids)
-                roi = get_roi_corners(corners, ids)
-                if roi is not None:
-                    cv.polylines(display, [roi.astype(int)],
-                                 isClosed=True, color=(0, 255, 0), thickness=2)
-                    self._roi_var.set("ROI: Found")
+                if self._show_overlay:
+                    if corners is not None and ids is not None:
+                        cv.aruco.drawDetectedMarkers(display, corners, ids)
+                    roi = get_roi_corners(corners, ids)
+                    if roi is not None:
+                        cv.polylines(display, [roi.astype(int)],
+                                     isClosed=True, color=(0, 255, 0), thickness=2)
+                        self._roi_var.set("ROI: Found")
+                    else:
+                        self._roi_var.set("ROI: Not found")
                 else:
-                    self._roi_var.set("ROI: Not found")
-            else:
-                self._roi_var.set("ROI: overlay off")
+                    self._roi_var.set("ROI: overlay off")
 
-            # Read camera frame size.
-            h, w = display.shape[:2]
+                # Read camera frame size.
+                h, w = display.shape[:2]
 
-            # Use fixed preview canvas size.
-            canvas_w = self._PREV_W
-            canvas_h = self._PREV_H
+                # Use fixed preview canvas size.
+                canvas_w = self._PREV_W
+                canvas_h = self._PREV_H
 
-            # Scale image to cover the entire canvas.
-            # This avoids black bars by cropping excess image instead of letterboxing.
-            scale = max(canvas_w / w, canvas_h / h)
+                if h < 1 or w < 1:
+                    raise ValueError(f"Degenerate camera frame shape: {display.shape}")
 
-            # Calculate resized dimensions.
-            nw = max(1, int(w * scale))
-            nh = max(1, int(h * scale))
+                # Scale image to cover the entire canvas.
+                # This avoids black bars by cropping excess image instead of letterboxing.
+                scale = max(canvas_w / w, canvas_h / h)
 
-            # Use good interpolation depending on whether the image is shrinking or growing.
-            interpolation = cv.INTER_AREA if scale < 1.0 else cv.INTER_LINEAR
+                # Calculate resized dimensions.
+                nw = max(1, int(w * scale))
+                nh = max(1, int(h * scale))
 
-            # Resize camera image.
-            resized = cv.resize(
-                display,
-                (nw, nh),
-                interpolation=interpolation
-            )
+                # Use good interpolation depending on whether the image is shrinking or growing.
+                interpolation = cv.INTER_AREA if scale < 1.0 else cv.INTER_LINEAR
 
-            # Center-crop resized image to exactly match canvas size.
-            x_start = max(0, (nw - canvas_w) // 2)
-            y_start = max(0, (nh - canvas_h) // 2)
-            cropped = resized[
-                y_start:y_start + canvas_h,
-                x_start:x_start + canvas_w
-            ]
+                # Resize camera image.
+                resized = cv.resize(
+                    display,
+                    (nw, nh),
+                    interpolation=interpolation
+                )
 
-            # Convert OpenCV BGR image to RGB for Tkinter.
-            rgb = cv.cvtColor(cropped, cv.COLOR_BGR2RGB)
+                # Center-crop resized image to exactly match canvas size.
+                x_start = max(0, (nw - canvas_w) // 2)
+                y_start = max(0, (nh - canvas_h) // 2)
+                cropped = resized[
+                    y_start:y_start + canvas_h,
+                    x_start:x_start + canvas_w
+                ]
 
-            # Convert NumPy image to Pillow image.
-            pil = Image.fromarray(rgb)
+                # Convert OpenCV BGR image to RGB for Tkinter.
+                rgb = cv.cvtColor(cropped, cv.COLOR_BGR2RGB)
 
-            # Convert Pillow image to Tkinter image.
-            tkimg = ImageTk.PhotoImage(pil)
+                # Convert NumPy image to Pillow image.
+                pil = Image.fromarray(rgb)
 
-            # Clear old frame.
-            self._preview_canvas.delete("all")
+                # Convert Pillow image to Tkinter image.
+                tkimg = ImageTk.PhotoImage(pil)
 
-            # Draw image at top-left because it already matches the canvas size.
-            self._preview_canvas.create_image(
-                0,
-                0,
-                image=tkimg,
-                anchor="nw"
-            )
+                # Clear old frame.
+                self._preview_canvas.delete("all")
 
-            # Store reference so Tkinter does not garbage collect the frame.
-            self._preview_tk_img = tkimg
-            
+                # Draw image at top-left because it already matches the canvas size.
+                self._preview_canvas.create_image(
+                    0,
+                    0,
+                    image=tkimg,
+                    anchor="nw"
+                )
+
+                # Store reference so Tkinter does not garbage collect the frame.
+                self._preview_tk_img = tkimg
+
+            except Exception as error:
+                print(f"Preview frame error: {error}")
+                self._marker_var.set("Markers: preview error")
 
             self._preview_after_id = self._preview_canvas.after(33, self._preview_frame_loop)
 
@@ -946,7 +958,11 @@ class CameraPanelMixin:
                 "exposure": int(self.exposure_var.get()),
                 "gain":     int(self.gain_var.get()),
             }
-            save_camera_profile(profile_name, profile)
+            try:
+                save_camera_profile(profile_name, profile)
+            except Exception as error:
+                messagebox.showerror("Save Error", f"Could not save camera profile: {error}")
+                return
             self._append_log(f"Camera profile '{profile_name}' saved.", "blue")
 
     def _reset_cam_profile(self):

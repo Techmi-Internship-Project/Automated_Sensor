@@ -49,6 +49,12 @@ from gui_camera_panel import _info_icon
 HEALTH_CHECK_INTERVAL_MS = 5000
 # Below this much free space on the data drive, storage is flagged unhealthy.
 MIN_FREE_STORAGE_GB = 5.0
+# Consecutive failed storage checks required before treating the drive as
+# actually gone. At the 5s check interval this gives ~10-15s of tolerance
+# for a brief Google Drive / network-drive hiccup, mirroring the bounded
+# reconnect attempts already used for camera and laser relay failures,
+# instead of aborting a multi-hour run on a single missed check.
+STORAGE_FAILURE_TOLERANCE = 3
 # Order matters for the "all systems" pill: items checked here decide overall health.
 HEALTH_ITEMS = ["Camera", "Laser Module", "Storage"]
 
@@ -433,8 +439,27 @@ class RecoverySettingsMixin:
             free_gb = shutil.disk_usage(self.current_folder).free / (1024 ** 3)
             storage_ok = free_gb >= MIN_FREE_STORAGE_GB
         except Exception:
+            # Drive unmounted, network path dropped, etc. — treat as a failed
+            # check rather than crashing the health-check loop.
             storage_ok = False
-        self._apply_health_result("Storage", storage_ok)
+
+        streak = getattr(self, "_storage_failure_streak", 0)
+        if storage_ok:
+            streak = 0
+        else:
+            streak += 1
+        self._storage_failure_streak = streak
+
+        # Don't report the drive as down until it's failed several checks in
+        # a row — a single missed check is treated as a transient blip, not
+        # a real disconnect, so it doesn't trip the hardware-fault stop below.
+        if not storage_ok and 0 < streak < STORAGE_FAILURE_TOLERANCE:
+            self._append_log(
+                f"Storage check failed ({streak}/{STORAGE_FAILURE_TOLERANCE}) — retrying...",
+                "yellow",
+            )
+        reported_storage_ok = storage_ok or streak < STORAGE_FAILURE_TOLERANCE
+        self._apply_health_result("Storage", reported_storage_ok)
 
         # ── Laser ────────────────────────────────────────────────────────────
         try:

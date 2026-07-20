@@ -333,12 +333,19 @@ class BackendActionsMixin:
                 standalone = s.get("standalone_mode",True)
 
                 done_folder = self.controller.last_run_folder
-                dest = build_training_destination(done_folder, self.training_folder)
-                ok = move_run_to_training(
-                    done_folder,
-                    training_folder=self.training_folder,
-                    current_folder=self.current_folder
-                )
+                try:
+                    dest = build_training_destination(done_folder, self.training_folder)
+                    ok = move_run_to_training(
+                        done_folder,
+                        training_folder=self.training_folder,
+                        current_folder=self.current_folder
+                    )
+                except Exception as error:
+                    # e.g. the data drive dropped out mid-move — fall through
+                    # to the existing "move failed" path below instead of
+                    # raising and retrying this same move every 200ms forever.
+                    print(f"Could not move run to training: {error}")
+                    dest, ok = None, False
                 self.controller.last_run_folder = None
                 if ok and dest and str(dest) != self.last_summary_dest:
                     self.last_summary_dest = str(dest)

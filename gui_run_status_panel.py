@@ -428,12 +428,19 @@ class RunStatusLogMixin:
         self.log_text.configure(state="disabled")
         self.log_text.see("end")
 
-        # Write to run log if experiment is active
-        if self._active_log_path is not None : 
+        # Write to run log if experiment is active. The data drive can go
+        # away mid-run (e.g. a network/Google Drive path dropping out), so
+        # this failure is expected and must not take down the status loop —
+        # just note it once in the console instead of losing the whole poll
+        # cycle to an uncaught exception.
+        if self._active_log_path is not None :
             try:
                 log_path = self._active_log_path
-                with open(log_path, "a", encoding="utf-8") as f: 
+                with open(log_path, "a", encoding="utf-8") as f:
                     full_ts = time.strftime("%Y-%m-%d %H:%M:%S")
                     f.write(f"[{full_ts}][{category.upper()}] {message}\n")
-            except Exception :
-                pass
+                self._log_write_failing = False
+            except Exception as error:
+                if not getattr(self, "_log_write_failing", False) :
+                    print(f"Could not write to run log ({log_path}): {error}")
+                    self._log_write_failing = True
