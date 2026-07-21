@@ -3,6 +3,7 @@ from tkinter import messagebox, simpledialog, ttk
 import re
 import time
 import math
+import threading
 from pathlib import Path
 from PIL import Image, ImageTk
 
@@ -451,9 +452,11 @@ class CameraPanelMixin:
 
 
     def _toggle_preview(self):
+            if getattr(self, "_preview_opening", False):
+                return  # Already opening — button is disabled, but guard anyway.
+
             if not self._preview_running:
                 self._start_preview()
-                self._refresh_cam_btn.configure(state=tk.DISABLED)
 
             else:
                 self._stop_preview()
@@ -462,7 +465,18 @@ class CameraPanelMixin:
 
     def _start_preview(self):
             """
-            Opens selected camera and starts live preview loop
+            Opens the selected camera on a background thread and starts the
+            live preview loop once it succeeds.
+
+            Opening a capture device can block for a long time — or hang
+            indefinitely — if a driver is misbehaving, the OS is prompting
+            for camera permission, or another app is holding the device
+            open. Doing that open() call directly on the GUI thread means
+            any of those situations freezes the entire application (visible
+            as the whole window becoming unresponsive and the OS showing a
+            busy cursor), not just the preview. Running it on a background
+            thread keeps the GUI responsive no matter how long the open
+            takes, and reports a clear error instead of hanging forever.
             """
             try:
                 cam_idx  = self.get_selected_camera_index()
@@ -471,18 +485,95 @@ class CameraPanelMixin:
                 messagebox.showerror("Camera Error", str(e))
                 return
 
+            self._preview_opening = True
+            self._preview_toggle_btn.configure(text="Opening camera…", state=tk.DISABLED)
+            self._refresh_cam_btn.configure(state=tk.DISABLED)
+            self._append_log("Opening camera…", "blue")
+
+            self._preview_open_slow_notice_id = self.root.after(
+                5000, self._preview_open_slow_notice)
+
+            threading.Thread(
+                target=self._open_preview_camera_worker,
+                args=(cam_idx,),
+                daemon=True,
+            ).start()
+
+    def _preview_open_slow_notice(self):
+            """
+            Fires once, 5s into an in-progress camera open, purely to give
+            visible feedback that something is happening rather than the app
+            silently taking a while — the open itself can't be cancelled
+            once started (OpenCV's call isn't interruptible from Python).
+            """
+            self._preview_open_slow_notice_id = None
+            if getattr(self, "_preview_opening", False):
+                self._append_log(
+                    "Still trying to open the camera — this can indicate a "
+                    "driver issue, an OS camera-permission prompt, or "
+                    "another app holding the device open.",
+                    "yellow",
+                )
+
+    def _open_preview_camera_worker(self, cam_idx):
+            """
+            Runs on a background thread: does the actual (potentially slow
+            or hanging) camera open, then hands the result back to the GUI
+            thread via root.after — Tkinter widgets must only be touched
+            from the main thread.
+            """
             from camera import open_camera, set_normal_exposure
-            import cv2 as cv
 
-            self._preview_cap = open_camera(cam_idx)
+            cap = None
+            opened_ok = False
+            try:
+                cap = open_camera(cam_idx)
+                if cap is not None and cap.isOpened():
+                    set_normal_exposure(cap)
+                    opened_ok = True
+            except Exception as error:
+                print(f"Camera open failed: {error}")
 
-            # Check if failed to open
-            if self._preview_cap is None or not self._preview_cap.isOpened():
-                messagebox.showerror("Camera Error",
-                                     f"Could not open camera {cam_idx}.")
+            self.root.after(0, self._on_preview_camera_opened, cam_idx, cap, opened_ok)
+
+    def _on_preview_camera_opened(self, cam_idx, cap, opened_ok):
+            after_id = getattr(self, "_preview_open_slow_notice_id", None)
+            if after_id is not None:
+                try:
+                    self.root.after_cancel(after_id)
+                except Exception:
+                    pass
+                self._preview_open_slow_notice_id = None
+
+            self._preview_opening = False
+
+            # If an experiment started while the camera was still opening in
+            # the background, don't start a second, competing preview on top
+            # of the one the experiment itself is now using.
+            if self.controller.is_running:
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+                self._preview_toggle_btn.configure(
+                    text="▶  Preview OFF", state=tk.NORMAL, bg="#eef2ff", fg=TECHMI_BLUE)
+                self._refresh_cam_btn.configure(state=tk.NORMAL)
                 return
 
-            set_normal_exposure(self._preview_cap)
+            if not opened_ok:
+                if cap is not None:
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+                messagebox.showerror("Camera Error", f"Could not open camera {cam_idx}.")
+                self._preview_toggle_btn.configure(
+                    text="▶  Preview OFF", state=tk.NORMAL, bg="#eef2ff", fg=TECHMI_BLUE)
+                self._refresh_cam_btn.configure(state=tk.NORMAL)
+                return
+
+            self._preview_cap = cap
             self._preview_running = True
             self._cam_display.configure(fg=TEXT_MUTED)
             self._cam_arrow.configure(fg=TEXT_MUTED)
@@ -491,6 +582,7 @@ class CameraPanelMixin:
             self._overlay_btn.configure(state=tk.NORMAL)
             self._preview_toggle_btn.configure(
                 text="⏹  Preview ON",
+                state=tk.NORMAL,
                 bg=TECHMI_BLUE, fg="white"
             )
             self._append_log("Camera preview started.", "blue")

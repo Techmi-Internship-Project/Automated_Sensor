@@ -106,6 +106,8 @@ class SensorGUI(
 
             # Camera preview state
             self._preview_running   = False
+            self._preview_opening   = False
+            self._preview_open_slow_notice_id = None
             self._preview_cap       = None
             self._preview_after_id  = None
             self._preview_tk_img    = None
