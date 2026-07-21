@@ -362,23 +362,33 @@ class BackendActionsMixin:
                     print(f"Could not move run to training: {error}")
                     dest, ok = None, False
                 self.controller.last_run_folder = None
-                if ok and dest and str(dest) != self.last_summary_dest:
-                    self.last_summary_dest = str(dest)
-                    self._append_log(
-                        f"Run complete. Moved to {dest.name}.", "green")
-                    done_data = read_done_file(dest)
-                    self._show_run_summary(run_folder, captures, elapsed, done_data)
-
                 self._active_log_path = None
 
                 # Only wipe current/ if the run was actually moved out of it.
                 # Wiping after a failed move would permanently delete the run's
                 # images and metadata that are still sitting in current/.
+                #
+                # This runs before the summary popup below, and is not
+                # affected by whether that popup succeeds — last_run_folder
+                # is already cleared above, so this whole block never runs
+                # again for this run. If the wipe were gated behind the
+                # popup and the popup ever raised, current/ would be left
+                # with a leftover (empty) organism folder indefinitely.
                 if ok:
                     wipe_folder_contents(self.current_folder)
                 else:
                     self._append_log(
                         "Run move failed — leaving files in current/ for recovery.", "red")
+
+                if ok and dest and str(dest) != self.last_summary_dest:
+                    self.last_summary_dest = str(dest)
+                    self._append_log(
+                        f"Run complete. Moved to {dest.name}.", "green")
+                    try:
+                        done_data = read_done_file(dest)
+                        self._show_run_summary(run_folder, captures, elapsed, done_data)
+                    except Exception as error:
+                        print(f"Could not show run summary popup: {error}")
 
                 self._csv_uploaded = False
                 self._csv_uploaded_prompted = False

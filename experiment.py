@@ -35,6 +35,8 @@ def run_experiment(
         max_reconnect_attempts=3,
         reconnect_backoff_seconds=2.0,
         heartbeat_interval_seconds=120,
+        max_first_capture_roi_attempts=3,
+        first_roi_retry_delay_seconds=5.0,
 ):
     """
     Run repeated measurements for specified amount of time
@@ -63,6 +65,7 @@ def run_experiment(
     consecutive_capture_failures = 0
     consecutive_aruco_misses = 0       # How many captures in a row used the fallback ROI
     last_known_roi = None              # Stores ROI from the most recent successful detection
+    first_capture_roi_attempts = 0     # How many times the very first capture's ROI search has been tried
 
     def send_status(**kwargs) :
         """
@@ -356,14 +359,33 @@ def run_experiment(
                     print(f"Capture failed: {error}")
 
                     # ArUco not found on the very first capture — no fallback
-                    # was available, so direct the user to the camera setup widget.
+                    # is available yet. Retry a few times with a real delay
+                    # between attempts before giving up — a run that hasn't
+                    # captured anything yet is worth a bit of patience for
+                    # something transient (camera still settling, brief
+                    # vibration, condensation) to clear up, rather than
+                    # failing on the very first try.
                     if "ARUCO_NOT_FOUND" in error_text and last_known_roi is None:
+                        first_capture_roi_attempts += 1
+
+                        if first_capture_roi_attempts < max_first_capture_roi_attempts :
+                            send_status(
+                                last_message=(
+                                    f"ArUco markers not found on first capture — retrying in "
+                                    f"{first_roi_retry_delay_seconds:.0f}s "
+                                    f"({first_capture_roi_attempts}/{max_first_capture_roi_attempts})..."
+                                ),
+                                last_message_category="yellow",
+                            )
+                            time.sleep(first_roi_retry_delay_seconds)
+                            continue
 
                         raise RuntimeError(
                             "ARUCO_NOT_FOUND: Could not detect ArUco markers on the "
-                            "first capture. Please use the Camera Setup widget in the "
-                            "main window to verify your camera and marker placement "
-                            "before starting the experiment."
+                            f"first capture after {max_first_capture_roi_attempts} attempts. "
+                            "Please use the Camera Setup widget in the main window to "
+                            "verify your camera and marker placement before starting "
+                            "the experiment."
                         )
 
                     consecutive_capture_failures += 1

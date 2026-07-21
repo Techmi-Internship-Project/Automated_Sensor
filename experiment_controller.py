@@ -444,14 +444,17 @@ class ExperimentController :
         
         self.stop_event.set()
 
+        # Only update state/messaging here — do not zero out
+        # duration/capture_count/elapsed_seconds. Those drive the GUI's
+        # progress donut, progress bar, elapsed/remaining time, and capture
+        # ratio (see gui_backend_actions._update_status_loop_body), so
+        # zeroing them made every progress indicator snap to 0 the instant
+        # Stop was clicked instead of freezing at the run's true final state.
         self.update_status(
             state="stopping",
             last_message="Stop requested...",
             run_completed_successfully = False,
-            duration_seconds=0, # For progress bar
-            capture_count=0,
             alert_id=0, # For popup handling
-            elapsed_seconds=0,
         )
 
     def update_status(self, **kwargs) : 

@@ -187,23 +187,43 @@ def move_valid_runs_to_training(current_folder="current", training_folder="train
     return moved_count, skipped_count
 
 
-def cleanup_empty_organism_folders(current_folder="current") : 
+def cleanup_empty_organism_folders(current_folder="current") :
     current_path = Path(current_folder)
 
     if not current_path.exists() :
         return # Does not exist
-    
-    for organism_folder in current_path.iterdir() : 
+
+    def handle_error(func, path, exc_info) :
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception :
+            pass
+
+    for organism_folder in current_path.iterdir() :
         if not organism_folder.is_dir() :
             continue
 
-        try : 
+        try :
             organism_folder.rmdir()
+            continue
 
-        # Ignore error if folder is not empty
-        except OSError : 
-            # Do nothing because non-empty folders stay
-            pass 
+        # Not truly empty — could be real run data, or could just be a
+        # stray leftover file (e.g. a Windows desktop.ini or a Google
+        # Drive sync marker) that a bare rmdir() refuses to remove.
+        except OSError :
+            pass
+
+        # Only escalate to a recursive delete if there's no actual run
+        # data in here — never remove a folder that still has a run.json
+        # anywhere inside it.
+        if any(organism_folder.rglob("run.json")) :
+            continue
+
+        try :
+            shutil.rmtree(organism_folder, onerror=handle_error)
+        except Exception :
+            pass
 
 
 def find_last_run_info(current_folder="current", training_folder="training") :
@@ -259,17 +279,20 @@ def wipe_folder_contents(folder_path) :
 
         return
     
-    def handle_error(func, path, exc_info) : 
+    def handle_error(func, path, exc_info) :
         try:
             os.chmod(path, stat.S_IWRITE)
             func(path)
-        except Exception: 
+        except Exception:
             pass
 
-    for item in folder_path.iterdir() : 
-        if item.is_dir() : 
-            # Delete the folder
-            shutil.rmtree(item, onexc=handle_error)
+    for item in folder_path.iterdir() :
+        if item.is_dir() :
+            # Delete the folder. onerror (not onexc, which only exists on
+            # Python 3.12+) for compatibility with older Python — onexc
+            # raised TypeError immediately on 3.11, silently aborting this
+            # whole cleanup every time it ran.
+            shutil.rmtree(item, onerror=handle_error)
 
         else : 
             try:
