@@ -69,6 +69,14 @@ class ExperimentController :
 
         # Lock so experiment thread and GUI thread do not edit status at same time
         self.status_lock = threading.Lock()
+        # Queue of every (message, category) sent via update_status, so the
+        # GUI can log all of them in order rather than polling a single
+        # overwritable field every 200ms — a fast burst of status changes
+        # (e.g. a capture failing, the camera reconnecting, and the next
+        # capture starting, all within one poll window) could otherwise
+        # silently vanish, since only whichever value happened to be
+        # current at the exact moment of a poll tick would ever get logged.
+        self._log_queue = []
         self.status = { # Dictionary for live status updates
             "state": "idle",
             "elapsed_seconds": 0,
@@ -113,6 +121,8 @@ class ExperimentController :
         self.csv_ready_event.clear()
         with self._hardware_fault_lock :
             self.hardware_faults = {}
+        with self.status_lock :
+            self._log_queue = []
         self.last_error = None
         self.last_run_folder = None
         self.csv_skipped = False
@@ -457,25 +467,44 @@ class ExperimentController :
             alert_id=0, # For popup handling
         )
 
-    def update_status(self, **kwargs) : 
+    def update_status(self, **kwargs) :
         """
         Update the shared dictionary
         """
 
         # Lock status dictionary so only one thread edits
-        with self.status_lock : 
+        with self.status_lock :
             if "alert_message" in kwargs and kwargs["alert_message"] is not None :
                 kwargs["alert_id"] = self.status.get("alert_id", 0) + 1
-            
+
+            # Queue every distinct log-worthy message (see _log_queue above).
+            # Default an unset category to "gray" (neutral) rather than
+            # leaving it to inherit whatever category the previous message
+            # happened to have — silently inheriting a stale color is what
+            # made a real capture failure show up as an innocuous green line.
+            if kwargs.get("last_message") :
+                category = kwargs.get("last_message_category", "gray")
+                self._log_queue.append((kwargs["last_message"], category))
+
             self.status.update(kwargs)
 
+    def drain_log_queue(self) :
+        """
+        Returns and clears every (message, category) queued since the last
+        drain, in the order they were sent. Used by the GUI's status poll
+        to log every distinct message instead of only whichever one happens
+        to be current at each 200ms poll tick.
+        """
+        with self.status_lock :
+            messages = self._log_queue
+            self._log_queue = []
+        return messages
 
-
-    def get_status(self) : 
+    def get_status(self) :
         """
         Read current status safely
         """
-        with self.status_lock : 
+        with self.status_lock :
             return dict(self.status)
         
 

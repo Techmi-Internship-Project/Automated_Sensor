@@ -442,7 +442,8 @@ def run_experiment(
                             state="warning",
                             last_capture_result="Failed",
                             last_error=error_text,
-                            last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: {error_text}"
+                            last_message=f"Capture failed {consecutive_capture_failures}/{max_consecutive_failures}: {error_text}",
+                            last_message_category="yellow",
                         )
                         if capture_number >= 1 :
                             _enter_capture_degraded(f"Capture failure: {error_text}")

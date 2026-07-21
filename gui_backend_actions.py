@@ -304,8 +304,6 @@ class BackendActionsMixin:
             captures  = st.get("capture_count",            0)
             run_folder= st.get("run_folder",               None)
             last_img  = st.get("last_saved_image",         None)
-            last_msg  = st.get("last_message",             "Idle")
-            last_msg_category = st.get("last_message_category", "green")
             run_ok    = st.get("run_completed_successfully", False)
 
             if run_folder and run_folder != "-" :
@@ -430,10 +428,16 @@ class BackendActionsMixin:
             self.run_folder_var.set(str(run_folder) if run_folder else "-")
             self.last_img_var.set(str(last_img) if last_img else "-")
 
-            if last_msg and last_msg != self.last_msg_var.get() : # Only update if changed
-                 self.last_msg_var.set(last_msg)
-                 if self.controller.is_running:
-                    self._append_log(last_msg, last_msg_category)
+            # Drain every message queued since the last poll (not just
+            # whatever happens to be "current" this tick) so a fast burst of
+            # status changes — e.g. a capture failing, the camera
+            # reconnecting, and the next capture already starting, all
+            # within one 200ms window — can't have any of them silently
+            # skipped just because a later one overwrote it first.
+            for queued_msg, queued_category in self.controller.drain_log_queue() :
+                self.last_msg_var.set(queued_msg)
+                if self.controller.is_running:
+                    self._append_log(queued_msg, queued_category)
 
             # Persistent degraded-run banner — unlike last_msg_var above,
             # this stays up for as long as the fault is active rather than
