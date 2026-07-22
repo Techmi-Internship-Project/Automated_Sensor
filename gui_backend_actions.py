@@ -520,6 +520,7 @@ class BackendActionsMixin:
 
     def _prompt_csv_upload(self, run_folder):
         import shutil
+        from tkinter import filedialog
 
         if run_folder is None:
             self._csv_uploaded_prompted = False
@@ -527,47 +528,88 @@ class BackendActionsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Sensor Data Required")
-        win.geometry("560x320")
+        win.geometry("560x420")
         win.configure(bg="#f6f8fc")
         win.resizable(False, False)
         win.grab_set()
         win.lift()
         win.focus_force()
 
-        from gui_theme import NAVY, TEXT_MUTED, FONT_BRAND, DANGER, _btn
+        from gui_theme import NAVY, TEXT_MUTED, TEXT_DARK, SUCCESS, FONT_BRAND, DANGER, _btn
 
-        tk.Label(win, text="Upload Sensor Data CSV",
+        tk.Label(win, text="Upload Run Data",
                 fg=NAVY, bg="#f6f8fc",
                 font=(FONT_BRAND, 13, "bold")).pack(pady=(24, 8))
 
         tk.Label(win,
                 text="The model retraining requires the raw sensor data\n"
                     "from this run's bioreactor readings.\n\n"
-                    "Select the CSV file exported from the sensor hardware\n"
-                    "to begin retraining. Without it, the model will not update.",
+                    "Select the Sensor Data CSV exported from the sensor\n"
+                    "hardware to begin retraining. If a Hamilton TCD export\n"
+                    "was also logged for this run, select that too — it's\n"
+                    "optional, and retraining will proceed without it.",
                 fg=TEXT_MUTED, bg="#f6f8fc",
                 font=(FONT_BRAND, 10),
-                justify="center").pack(pady=(0, 20))
+                justify="center").pack(pady=(0, 16))
+
+        # Tracks the two files the user picks — sensor_data.csv (required by
+        # the analysis pipeline) and tcd_data.csv (an optional, separately
+        # logged Hamilton TCD export the pipeline merges in if present, but
+        # tolerates being absent).
+        selected = {"sensor": None, "tcd": None}
+
+        def _refresh_continue_state():
+            continue_btn.configure(state=(tk.NORMAL if selected["sensor"] else tk.DISABLED))
+
+        def _make_file_row(parent, label_text, key):
+            row = tk.Frame(parent, bg="#f6f8fc")
+            row.pack(fill=tk.X, padx=40, pady=(0, 12))
+
+            tk.Label(row, text=label_text, fg=TEXT_DARK, bg="#f6f8fc",
+                     font=(FONT_BRAND, 10, "bold"), anchor="w").pack(anchor="w")
+
+            inner = tk.Frame(row, bg="#f6f8fc")
+            inner.pack(fill=tk.X, pady=(4, 0))
+
+            status_var = tk.StringVar(value="No file selected")
+            status_lbl = tk.Label(inner, textvariable=status_var, fg=TEXT_MUTED,
+                                   bg="#f6f8fc", font=(FONT_BRAND, 9), anchor="w")
+
+            def _pick():
+                path = filedialog.askopenfilename(
+                    parent=win,
+                    title=f"Select {label_text}",
+                    filetypes=[("CSV files", "*.csv")]
+                )
+                if not path:
+                    return  # user cancelled file picker, keep window open
+                selected[key] = path
+                status_var.set(Path(path).name)
+                status_lbl.configure(fg=SUCCESS)
+                _refresh_continue_state()
+
+            _btn(inner, f"📂  Select {label_text}", _pick, "ghost").pack(side=tk.LEFT)
+            status_lbl.pack(side=tk.LEFT, padx=(12, 0))
+
+        _make_file_row(win, "Sensor Data CSV (required)", "sensor")
+        _make_file_row(win, "TCD Data CSV (optional)", "tcd")
 
         btn_row = tk.Frame(win, bg="#f6f8fc")
-        btn_row.pack()
+        btn_row.pack(pady=(8, 0))
 
         def _do_upload():
-            from tkinter import filedialog
-            csv_path = filedialog.askopenfilename(
-                parent=win,
-                title="Select Sensor Data CSV",
-                filetypes=[("CSV files", "*.csv")]
-            )
-            if not csv_path:
-                return  # user cancelled file picker, keep window open
+            if not selected["sensor"]:
+                return  # Continue is disabled until a sensor file is chosen
 
-            dest = Path(run_folder) / "sensor_data.csv"
             try:
-                shutil.copy2(csv_path, dest)
+                shutil.copy2(selected["sensor"], Path(run_folder) / "sensor_data.csv")
+                if selected["tcd"]:
+                    shutil.copy2(selected["tcd"], Path(run_folder) / "tcd_data.csv")
                 self._csv_uploaded = True
                 self.controller.csv_ready_event.set()
-                self._append_log("Sensor CSV uploaded. Waiting for model retraining...", "blue")
+                tcd_note = " and TCD data" if selected["tcd"] else ""
+                self._append_log(
+                    f"Sensor CSV uploaded{tcd_note}. Waiting for model retraining...", "blue")
                 win.destroy()
             except Exception as e:
                 from tkinter import messagebox
@@ -598,5 +640,6 @@ class BackendActionsMixin:
 
             win.destroy()
 
-        _btn(btn_row, "📂  Select CSV File", _do_upload, "primary").pack(side=tk.LEFT, padx=(0, 12))
+        continue_btn = _btn(btn_row, "Continue", _do_upload, "primary", state=tk.DISABLED)
+        continue_btn.pack(side=tk.LEFT, padx=(0, 12))
         _btn(btn_row, "Skip — End Run Without Retraining", _skip, "ghost").pack(side=tk.LEFT)
