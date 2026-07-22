@@ -528,9 +528,8 @@ class BackendActionsMixin:
 
         win = tk.Toplevel(self.root)
         win.title("Sensor Data Required")
-        win.geometry("560x420")
         win.configure(bg="#f6f8fc")
-        win.resizable(False, False)
+        win.minsize(420, 300)
         win.grab_set()
         win.lift()
         win.focus_force()
@@ -643,3 +642,18 @@ class BackendActionsMixin:
         continue_btn = _btn(btn_row, "Continue", _do_upload, "primary", state=tk.DISABLED)
         continue_btn.pack(side=tk.LEFT, padx=(0, 12))
         _btn(btn_row, "Skip — End Run Without Retraining", _skip, "ghost").pack(side=tk.LEFT)
+
+        # Size the window to whatever its content actually needs, and let it
+        # be resized/scrolled into view rather than hardcoding pixel
+        # dimensions — a fixed size guessed on one display/DPI/font setting
+        # can end up too short on another, silently pushing Continue/Skip
+        # off the visible window with no way to reach them.
+        win.resizable(True, True)
+        win.update_idletasks()
+        req_w = max(win.winfo_reqwidth(), 420)
+        req_h = max(win.winfo_reqheight(), 300)
+        screen_w = win.winfo_screenwidth()
+        screen_h = win.winfo_screenheight()
+        pos_x = (screen_w - req_w) // 2
+        pos_y = (screen_h - req_h) // 2
+        win.geometry(f"{req_w}x{req_h}+{max(pos_x, 0)}+{max(pos_y, 0)}")
