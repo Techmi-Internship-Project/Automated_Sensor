@@ -138,8 +138,16 @@ def move_run_to_training(run_folder, training_folder="training", current_folder=
     shutil.move(str(run_folder), str(destination))
     print(f"Moved {run_folder} -> {destination}")
 
-    cleanup_empty_organism_folders(current_folder)
-    
+    # The run data has already safely moved at this point — a failure while
+    # tidying up the now-empty organism folder (e.g. a Google Drive
+    # placeholder/reparse-point file raising OSError mid-walk) must not
+    # make this function report the move itself as failed. The caller also
+    # runs its own belt-and-suspenders cleanup of current/ afterward.
+    try:
+        cleanup_empty_organism_folders(current_folder)
+    except Exception as error:
+        print(f"Warning: could not clean up empty organism folder in {current_folder}: {error}")
+
     return True # Move succeeded
 
 
@@ -200,30 +208,41 @@ def cleanup_empty_organism_folders(current_folder="current") :
         except Exception :
             pass
 
-    for organism_folder in current_path.iterdir() :
-        if not organism_folder.is_dir() :
-            continue
+    try:
+        organism_folders = list(current_path.iterdir())
+    except OSError as error:
+        print(f"Warning: could not list {current_path} for cleanup: {error}")
+        return
 
+    for organism_folder in organism_folders :
         try :
-            organism_folder.rmdir()
-            continue
+            if not organism_folder.is_dir() :
+                continue
 
-        # Not truly empty — could be real run data, or could just be a
-        # stray leftover file (e.g. a Windows desktop.ini or a Google
-        # Drive sync marker) that a bare rmdir() refuses to remove.
-        except OSError :
-            pass
+            try :
+                organism_folder.rmdir()
+                continue
 
-        # Only escalate to a recursive delete if there's no actual run
-        # data in here — never remove a folder that still has a run.json
-        # anywhere inside it.
-        if any(organism_folder.rglob("run.json")) :
-            continue
+            # Not truly empty — could be real run data, or could just be a
+            # stray leftover file (e.g. a Windows desktop.ini or a Google
+            # Drive sync marker) that a bare rmdir() refuses to remove.
+            except OSError :
+                pass
 
-        try :
+            # Only escalate to a recursive delete if there's no actual run
+            # data in here — never remove a folder that still has a run.json
+            # anywhere inside it.
+            if any(organism_folder.rglob("run.json")) :
+                continue
+
             shutil.rmtree(organism_folder, onerror=handle_error)
-        except Exception :
-            pass
+
+        except Exception as error :
+            # A single problematic folder (e.g. a Google Drive placeholder
+            # file that isn't fully synced yet) must not stop the other
+            # organism folders in current/ from being cleaned up.
+            print(f"Warning: could not clean up {organism_folder}: {error}")
+            continue
 
 
 def find_last_run_info(current_folder="current", training_folder="training") :
@@ -286,19 +305,29 @@ def wipe_folder_contents(folder_path) :
         except Exception:
             pass
 
-    for item in folder_path.iterdir() :
-        if item.is_dir() :
-            # Delete the folder. onerror (not onexc, which only exists on
-            # Python 3.12+) for compatibility with older Python — onexc
-            # raised TypeError immediately on 3.11, silently aborting this
-            # whole cleanup every time it ran.
-            shutil.rmtree(item, onerror=handle_error)
+    try:
+        items = list(folder_path.iterdir())
+    except OSError as error:
+        print(f"Warning: could not list {folder_path} to wipe: {error}")
+        return
 
-        else : 
-            try:
+    for item in items :
+        try:
+            if item.is_dir() :
+                # Delete the folder. onerror (not onexc, which only exists on
+                # Python 3.12+) for compatibility with older Python — onexc
+                # raised TypeError immediately on 3.11, silently aborting this
+                # whole cleanup every time it ran.
+                shutil.rmtree(item, onerror=handle_error)
+
+            else :
                 # Delete the individual file
                 item.unlink()
-            except Exception :
-                pass
+
+        except Exception as error:
+            # One problematic item (e.g. a Google Drive placeholder file
+            # mid-sync) must not stop the rest of current/ from being wiped.
+            print(f"Warning: could not remove {item}: {error}")
+            continue
 
 
